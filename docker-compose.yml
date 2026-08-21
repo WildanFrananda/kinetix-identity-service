@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: kinetix_identity_db
+    restart: always
+    environment:
+      POSTGRES_DB: kinetix_identity_dev
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+    ports:
+      - "5436:5432"
+    volumes:
+      - postgres_identity_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kinetix_identity_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    container_name: kinetix_identity_web
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USERNAME=postgres
+      - DB_PASSWORD=postgrespassword
+      - DB_DATABASE=kinetix_identity_dev
+      - JWT_SECRET=kinetix_super_secret_jwt_key_2026
+      - JWT_EXPIRES_IN=86400s
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_identity_data:
