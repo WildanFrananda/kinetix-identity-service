@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from "@nestjs/common"
+import { Body, Controller, HttpCode, HttpStatus, Param, ParseIntPipe, Post } from "@nestjs/common"
 import AuthUsecaseService from "../../application/services/auth_usecase.service"
 import LoginInputDto from "../../application/dto/login_input.dto"
 import RegisterUserInputDto from "../../application/dto/register_user_input.dto"
@@ -18,6 +18,22 @@ class AuthController {
   @HttpCode(HttpStatus.CREATED)
   async register(@Body() dto: RegisterUserInputDto): Promise<AuthTokenOutputDto> {
     return await this.authUsecase.register(dto)
+  }
+
+  @Post("2fa/setup/:id")
+  @HttpCode(HttpStatus.OK)
+  async setupTwoFactor(
+    @Param("id", ParseIntPipe) userId: number
+  ): Promise<{ twoFactorSecret: string; qrCodeUrl: string }> {
+    return await this.authUsecase.setupTwoFactor(userId)
+  }
+
+  @Post("oauth/callback")
+  @HttpCode(HttpStatus.OK)
+  async oauthCallback(
+    @Body() dto: { email: string; provider: "google" | "github" }
+  ): Promise<AuthTokenOutputDto> {
+    return await this.authUsecase.handleOAuthCallback(dto.email, dto.provider)
   }
 }
 

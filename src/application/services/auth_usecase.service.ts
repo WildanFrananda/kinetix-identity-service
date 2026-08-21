@@ -1,4 +1,4 @@
-import { Inject, Injectable, UnauthorizedException, ConflictException } from "@nestjs/common"
+import { Inject, Injectable, UnauthorizedException, ConflictException, NotFoundException } from "@nestjs/common"
 import { JwtService } from "@nestjs/jwt"
 import * as bcrypt from "bcrypt"
 import UserEntity from "../../domain/entities/user.entity"
@@ -55,6 +55,42 @@ class AuthUsecaseService {
       id: savedUser.id,
       email: savedUser.email,
       role: savedUser.role
+    })
+  }
+
+  async setupTwoFactor(userId: number): Promise<{ twoFactorSecret: string; qrCodeUrl: string }> {
+    const user: UserEntity | null = await this.userRepository.findById(userId)
+    if (!user) {
+      throw new NotFoundException(`User with ID ${userId} not found`)
+    }
+
+    const secret: string = `KINETIX_2FA_${userId}_${Math.random().toString(36).substring(2, 10).toUpperCase()}`
+    user.isTwoFactorEnabled = true
+    user.twoFactorSecret = secret
+    await this.userRepository.save(user)
+
+    return {
+      twoFactorSecret: secret,
+      qrCodeUrl: `otpauth://totp/Kinetix:${user.email}?secret=${secret}&issuer=Kinetix`
+    }
+  }
+
+  async handleOAuthCallback(email: string, provider: "google" | "github"): Promise<AuthTokenOutputDto> {
+    let user: UserEntity | null = await this.userRepository.findByEmail(email)
+
+    if (!user) {
+      const dummyPassword = await bcrypt.hash(`oauth_${provider}_${Date.now()}`, 10)
+      user = new UserEntity(0, email, dummyPassword, "customer")
+      user = await this.userRepository.save(user)
+    }
+
+    const payload = { sub: user.id, email: user.email, role: user.role, provider }
+    const accessToken: string = this.jwtService.sign(payload)
+
+    return new AuthTokenOutputDto(accessToken, 86400, {
+      id: user.id,
+      email: user.email,
+      role: user.role
     })
   }
 }
