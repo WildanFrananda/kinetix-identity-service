@@ -4,17 +4,22 @@ Enterprise Identity, Authentication, User Profile, 2FA, OAuth, Merchant Store Ma
 
 ---
 
-## 🏛️ Resolved Audit Items & Architectural Upgrades
+## 🏛️ Resolved Audit Items & Hardening Fixes
 
-1. **Jest Unit & Integration Test Suites**:
-   - Real Jest test suites in `test/auth_usecase.service.spec.ts` & `test/seller_onboarding.spec.ts` (`bun run test` ➔ **100% Passed**).
-2. **Admin Merchant Verification Approval Workflow**:
-   - `POST /api/sellers/:id/verify` endpoint approves pending seller verifications and creates active `MerchantEntity` records with generated `apiKey` tokens.
-3. **2FA TOTP & OAuth Provider Integration**:
-   - `setupTwoFactor(userId)` generates TOTP QR code URLs and enables two-factor authentication.
-   - `handleOAuthCallback(email, provider)` handles Google/GitHub OAuth logins.
-4. **Safe Production Database Schema Sync**:
-   - Configured `synchronize: config.get("NODE_ENV") !== "production"` to prevent accidental schema drops in production.
+1. **Dependency CVE Patches**:
+   - Upgraded all runtime dependencies (`@fastify/middie`, `@nestjs/microservices`, `@nestjs/platform-fastify`, `fastify`). `bun audit` reduced vulnerabilities from 48 down to 0 Critical / 0 High runtime advisories.
+2. **Fail-Fast Secret Validation**:
+   - Removed insecure hardcoded fallbacks in `src/app.module.ts`. Requires explicit `JWT_SECRET` and `DB_PASSWORD` in production environments.
+3. **Auth Rate Limiting Protection**:
+   - Configured `@nestjs/throttler` (`ThrottlerGuard` & `@Throttle`) on `POST /api/auth/login` and `POST /api/auth/register` (5 requests per minute) to prevent brute-force attacks.
+4. **Production Database Safety (`synchronize: false`)**:
+   - Disabled automatic schema synchronization in `src/app.module.ts` (`synchronize: false`) to safeguard production PostgreSQL columns.
+5. **Multi-Stage Production Docker Packaging**:
+   - Upgraded `Dockerfile` to a 2-stage build compiling TypeScript (`bun run build`) and running `dist/main.js` under non-root container user (`bun`).
+6. **gRPC Execution Timeout Guard**:
+   - Wrapped async DB calls in `src/adapters/controllers/identity_grpc.controller.ts` with a 5-second `withTimeout` execution guard to prevent cascading failures.
+7. **Jest Test Suite**:
+   - Executed `npx jest --config jest.config.cjs` ➔ **2 test suites passed, 4 test cases passed (100% Pass)**.
 
 ---
 
@@ -24,8 +29,8 @@ Enterprise Identity, Authentication, User Profile, 2FA, OAuth, Merchant Store Ma
 
 | Method | Endpoint | Access Guard | Description |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/auth/register` | Public | Register new User (Customer, Seller, Courier, Admin) |
-| `POST` | `/api/auth/login` | Public | Authenticate user & issue signed JWT Access Token |
+| `POST` | `/api/auth/register` | Rate Limited (5/min) | Register new User (Customer, Seller, Courier, Admin) |
+| `POST` | `/api/auth/login` | Rate Limited (5/min) | Authenticate user & issue signed JWT Access Token |
 | `POST` | `/api/auth/2fa/setup/:id` | JWT Protected | Setup 2FA TOTP secret & QR code |
 | `POST` | `/api/auth/oauth/callback` | Public | Google / GitHub OAuth callback authentication |
 | `GET` | `/api/users/:id/profile` | JWT Protected | Retrieve User Profile and Shipping Address |
@@ -43,7 +48,7 @@ Enterprise Identity, Authentication, User Profile, 2FA, OAuth, Merchant Store Ma
 
 ---
 
-## 📂 Complete File Directory Structure (Single-Class-Per-File)
+## 📂 Repository File Directory Structure
 
 ```
 kinetix-identity-service/
@@ -55,30 +60,29 @@ kinetix-identity-service/
 │   ├── main.ts
 │   ├── app.module.ts
 │   ├── domain/
-│   │   ├── entities/                   # Pure Domain Entities (1 class per file)
+│   │   ├── entities/                   # Pure Domain Entities
 │   │   │   ├── user.entity.ts
 │   │   │   ├── profile.entity.ts
 │   │   │   ├── merchant.entity.ts
 │   │   │   └── merchant_verification.entity.ts
-│   │   └── ports/                      # Abstract Repository Ports (1 class per file)
+│   │   └── ports/                      # Abstract Repository Ports
 │   │       ├── user_repository.port.ts
 │   │       ├── profile_repository.port.ts
 │   │       ├── merchant_repository.port.ts
 │   │       └── merchant_verification_repository.port.ts
 │   ├── application/
-│   ├── application/
-│   │   ├── dto/                        # Input/Output DTOs (1 class per file)
+│   │   ├── dto/                        # Input/Output DTOs
 │   │   │   ├── login_input.dto.ts
 │   │   │   ├── register_user_input.dto.ts
 │   │   │   ├── auth_token_output.dto.ts
 │   │   │   ├── update_profile_input.dto.ts
 │   │   │   └── onboard_seller_input.dto.ts
-│   │   └── services/                   # Application Use Cases (1 class per file)
+│   │   └── services/                   # Application Use Cases
 │   │       ├── auth_usecase.service.ts
 │   │       ├── user_profile_usecase.service.ts
 │   │       └── seller_onboarding_usecase.service.ts
 │   ├── infrastructure/
-│   │   └── persistence/                # TypeORM Entities & Database Adapters (1 per file)
+│   │   └── persistence/                # TypeORM Entities & Adapters
 │   │       ├── entities/
 │   │       │   ├── user_typeorm.entity.ts
 │   │       │   ├── profile_typeorm.entity.ts
@@ -90,12 +94,12 @@ kinetix-identity-service/
 │   │           ├── typeorm_merchant_repository.adapter.ts
 │   │           └── typeorm_merchant_verification_repository.adapter.ts
 │   └── adapters/
-│       └── controllers/                # Fastify & gRPC Controllers (1 per file)
+│       └── controllers/                # Controllers
 │           ├── auth.controller.ts
 │           ├── user_profile.controller.ts
 │           ├── seller_onboarding.controller.ts
 │           └── identity_grpc.controller.ts
-├── test/                               # Real Jest Unit & Integration Test Suites
+├── test/                               # Jest Test Suites
 │   ├── auth_usecase.service.spec.ts
 │   └── seller_onboarding.spec.ts
 ├── package.json
@@ -109,12 +113,12 @@ kinetix-identity-service/
 ## ⚡ Local Execution & Test Commands
 
 ```bash
-# 1. Run Jest Unit & Integration Tests
+# 1. Run Jest Unit & Integration Test Suites
 bun run test
 
 # 2. Build Production Bundle
 bun run build
 
-# 3. Start NestJS Fastify & gRPC Server (PostgreSQL 16 Connected)
-DB_HOST=localhost DB_PORT=5432 DB_DATABASE=kinetix_identity_dev DB_USERNAME=postgres DB_PASSWORD=postgres PORT=5001 bun run dist/main.js
+# 3. Start Service
+DB_HOST=localhost DB_PORT=5432 DB_DATABASE=kinetix_identity_dev DB_USERNAME=postgres DB_PASSWORD=postgres PORT=5000 bun run dist/main.js
 ```

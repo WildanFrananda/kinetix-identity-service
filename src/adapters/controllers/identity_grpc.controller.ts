@@ -8,6 +8,17 @@ import ProfileEntity from "../../domain/entities/profile.entity"
 import UserEntity from "../../domain/entities/user.entity"
 import MerchantEntity from "../../domain/entities/merchant.entity"
 
+const GRPC_TIMEOUT_MS = 5000
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number = GRPC_TIMEOUT_MS): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`gRPC database execution timed out after ${timeoutMs}ms`)), timeoutMs)
+    )
+  ])
+}
+
 @Controller()
 class IdentityGrpcController {
   constructor(
@@ -31,18 +42,31 @@ class IdentityGrpcController {
     role: string
   }> {
     const userId: number = Number(data.user_id)
-    const user: UserEntity | null = await this.userRepository.findById(userId)
-    const profile: ProfileEntity | null = await this.profileUsecase.getProfile(userId).catch(() => null)
+    try {
+      const user: UserEntity | null = await withTimeout(this.userRepository.findById(userId))
+      const profile: ProfileEntity | null = await withTimeout(this.profileUsecase.getProfile(userId)).catch(() => null)
 
-    return {
-      user_id: userId,
-      email: user ? user.email : "",
-      full_name: profile ? profile.fullName : "",
-      phone_number: profile ? profile.phoneNumber : "",
-      street_address: profile ? profile.streetAddress : "",
-      city: profile ? profile.city : "",
-      postal_code: profile ? profile.postalCode : "",
-      role: user ? user.role : "customer"
+      return {
+        user_id: userId,
+        email: user ? user.email : "",
+        full_name: profile ? profile.fullName : "",
+        phone_number: profile ? profile.phoneNumber : "",
+        street_address: profile ? profile.streetAddress : "",
+        city: profile ? profile.city : "",
+        postal_code: profile ? profile.postalCode : "",
+        role: user ? user.role : "customer"
+      }
+    } catch {
+      return {
+        user_id: userId,
+        email: "",
+        full_name: "",
+        phone_number: "",
+        street_address: "",
+        city: "",
+        postal_code: "",
+        role: "customer"
+      }
     }
   }
 
@@ -55,24 +79,34 @@ class IdentityGrpcController {
     status: string
   }> {
     const userId: number = Number(data.user_id)
-    const merchant: MerchantEntity | null = await this.merchantRepository.findByUserId(userId)
+    try {
+      const merchant: MerchantEntity | null = await withTimeout(this.merchantRepository.findByUserId(userId))
 
-    if (!merchant) {
+      if (!merchant) {
+        return {
+          user_id: userId,
+          store_name: "",
+          business_registration_number: "",
+          tax_id: "",
+          status: "not_found"
+        }
+      }
+
+      return {
+        user_id: merchant.userId,
+        store_name: merchant.storeName,
+        business_registration_number: merchant.businessRegistrationNumber,
+        tax_id: merchant.taxId,
+        status: merchant.status
+      }
+    } catch {
       return {
         user_id: userId,
         store_name: "",
         business_registration_number: "",
         tax_id: "",
-        status: "not_found"
+        status: "timeout"
       }
-    }
-
-    return {
-      user_id: merchant.userId,
-      store_name: merchant.storeName,
-      business_registration_number: merchant.businessRegistrationNumber,
-      tax_id: merchant.taxId,
-      status: merchant.status
     }
   }
 

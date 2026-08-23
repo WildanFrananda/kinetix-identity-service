@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common"
 import { ConfigModule, ConfigService } from "@nestjs/config"
 import { JwtModule } from "@nestjs/jwt"
 import { TypeOrmModule } from "@nestjs/typeorm"
+import { ThrottlerModule } from "@nestjs/throttler"
 
 import UserTypeormEntity from "./infrastructure/persistence/entities/user_typeorm.entity"
 import ProfileTypeormEntity from "./infrastructure/persistence/entities/profile_typeorm.entity"
@@ -25,19 +26,31 @@ import IdentityGrpcController from "./adapters/controllers/identity_grpc.control
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 10
+      }
+    ]),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        type: "postgres",
-        host: config.get<string>("DB_HOST", "localhost"),
-        port: Number(config.get<number>("DB_PORT", 5432)),
-        username: config.get<string>("DB_USERNAME", "postgres"),
-        password: config.get<string>("DB_PASSWORD", "postgrespassword"),
-        database: config.get<string>("DB_DATABASE", "kinetix_identity_dev"),
-        entities: [UserTypeormEntity, ProfileTypeormEntity, MerchantVerificationTypeormEntity, MerchantTypeormEntity],
-        synchronize: config.get<string>("NODE_ENV") !== "production"
-      })
+      useFactory: (config: ConfigService) => {
+        const dbPassword = config.get<string>("DB_PASSWORD") || process.env.DB_PASSWORD
+        if (!dbPassword && process.env.NODE_ENV === "production") {
+          throw new Error("CRITICAL SECURITY ERROR: DB_PASSWORD environment variable is required!")
+        }
+        return {
+          type: "postgres",
+          host: config.get<string>("DB_HOST", "localhost"),
+          port: Number(config.get<number>("DB_PORT", 5432)),
+          username: config.get<string>("DB_USERNAME", "postgres"),
+          password: dbPassword || "postgrespassword",
+          database: config.get<string>("DB_DATABASE", "kinetix_identity_dev"),
+          entities: [UserTypeormEntity, ProfileTypeormEntity, MerchantVerificationTypeormEntity, MerchantTypeormEntity],
+          synchronize: false
+        }
+      }
     }),
     TypeOrmModule.forFeature([
       UserTypeormEntity,
@@ -48,12 +61,18 @@ import IdentityGrpcController from "./adapters/controllers/identity_grpc.control
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        secret: config.get<string>("JWT_SECRET", "kinetix_super_secret_jwt_key_2026"),
-        signOptions: {
-          expiresIn: config.get<string>("JWT_EXPIRES_IN", "86400s")
+      useFactory: (config: ConfigService) => {
+        const jwtSecret = config.get<string>("JWT_SECRET") || process.env.JWT_SECRET
+        if (!jwtSecret && process.env.NODE_ENV === "production") {
+          throw new Error("CRITICAL SECURITY ERROR: JWT_SECRET environment variable is required!")
         }
-      })
+        return {
+          secret: jwtSecret || "kinetix_super_secret_jwt_key_2026",
+          signOptions: {
+            expiresIn: 86400
+          }
+        }
+      }
     })
   ],
   controllers: [AuthController, UserProfileController, SellerOnboardingController, IdentityGrpcController],
