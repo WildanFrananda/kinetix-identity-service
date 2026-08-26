@@ -48,7 +48,6 @@ class SellerOnboardingUsecaseService {
     await this.verificationRepository.save(verification)
 
     const slug: string = verification.storeName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
-    const apiKey: string = `KINETIX_MK_${userId}_${Date.now()}`
 
     let merchant: MerchantEntity | null = await this.merchantRepository.findByUserId(userId)
 
@@ -60,7 +59,6 @@ class SellerOnboardingUsecaseService {
         slug,
         verification.businessRegistrationNumber,
         verification.taxId,
-        apiKey,
         "verified",
         "Official Merchant Store",
         verification.verifiedAt

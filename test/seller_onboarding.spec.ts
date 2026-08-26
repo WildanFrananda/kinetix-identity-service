@@ -34,7 +34,7 @@ describe("SellerOnboardingUsecaseService Unit Tests", () => {
     expect(res.storeName).toBe("Kinetix Store")
   })
 
-  it("should approve pending seller verification and create active MerchantEntity", async () => {
+  it("should approve pending seller verification and create active MerchantEntity without API Key", async () => {
     const pendingVerification = new MerchantVerificationEntity(1, 1, "Kinetix Store", "REG-100", "TAX-200", "pending")
     mockVerificationRepo.findByUserId.mockResolvedValue(pendingVerification)
     mockVerificationRepo.save.mockImplementation(async (v: MerchantVerificationEntity) => v)
@@ -45,6 +45,6 @@ describe("SellerOnboardingUsecaseService Unit Tests", () => {
     const approvedMerchant = await service.approveVerification(1)
 
     expect(approvedMerchant.status).toBe("verified")
-    expect(approvedMerchant.apiKey).toContain("KINETIX_MK_1_")
+    expect(approvedMerchant.storeName).toBe("Kinetix Store")
   })
 })

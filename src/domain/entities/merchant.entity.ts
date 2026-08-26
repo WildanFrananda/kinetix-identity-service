@@ -6,7 +6,6 @@ class MerchantEntity {
   description?: string
   businessRegistrationNumber: string
   taxId: string
-  apiKey: string
   status: "pending" | "verified" | "active" | "suspended"
   verifiedAt?: Date
 
@@ -17,7 +16,6 @@ class MerchantEntity {
     slug: string,
     businessRegistrationNumber: string,
     taxId: string,
-    apiKey: string,
     status: "pending" | "verified" | "active" | "suspended" = "pending",
     description?: string,
     verifiedAt?: Date
@@ -28,7 +26,6 @@ class MerchantEntity {
     this.slug = slug
     this.businessRegistrationNumber = businessRegistrationNumber
     this.taxId = taxId
-    this.apiKey = apiKey
     this.status = status
     this.description = description
     this.verifiedAt = verifiedAt

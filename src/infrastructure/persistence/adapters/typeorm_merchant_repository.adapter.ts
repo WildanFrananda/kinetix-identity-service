@@ -22,24 +22,6 @@ class TypeormMerchantRepositoryAdapter implements MerchantRepositoryPort {
       record.slug,
       record.businessRegistrationNumber,
       record.taxId,
-      record.apiKey,
-      record.status,
-      record.description,
-      record.verifiedAt
-    )
-  }
-
-  async findByApiKey(apiKey: string): Promise<MerchantEntity | null> {
-    const record = await this.repo.findOne({ where: { apiKey } })
-    if (!record) return null
-    return new MerchantEntity(
-      record.id,
-      record.userId,
-      record.storeName,
-      record.slug,
-      record.businessRegistrationNumber,
-      record.taxId,
-      record.apiKey,
       record.status,
       record.description,
       record.verifiedAt
@@ -55,7 +37,6 @@ class TypeormMerchantRepositoryAdapter implements MerchantRepositoryPort {
       description: merchant.description,
       businessRegistrationNumber: merchant.businessRegistrationNumber,
       taxId: merchant.taxId,
-      apiKey: merchant.apiKey,
       status: merchant.status,
       verifiedAt: merchant.verifiedAt
     })
@@ -67,7 +48,6 @@ class TypeormMerchantRepositoryAdapter implements MerchantRepositoryPort {
       saved.slug,
       saved.businessRegistrationNumber,
       saved.taxId,
-      saved.apiKey,
       saved.status,
       saved.description,
       saved.verifiedAt

@@ -23,9 +23,6 @@ class MerchantTypeormEntity {
   @Column()
   taxId!: string
 
-  @Column({ unique: true })
-  apiKey!: string
-
   @Column({ default: "pending" })
   status!: "pending" | "verified" | "active" | "suspended"
 
