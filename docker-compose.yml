@@ -1,3 +1,7 @@
+# Secrets are read from the environment with the ${VAR:?message} form, which makes
+# `docker compose` refuse to render at all when a value is missing rather than starting
+# on a committed default (S1 / P0-SEC-02). Source your .env before running:
+#   set -a && . ./.env && set +a && docker compose up
 services:
   db:
     image: postgres:16-alpine
@@ -5,14 +9,12 @@ services:
     restart: always
     environment:
       POSTGRES_DB: kinetix_identity_dev
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgrespassword
-    ports:
-      - "5436:5432"
+      POSTGRES_USER: ${DB_USERNAME:?DB_USERNAME is required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
     volumes:
       - postgres_identity_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d kinetix_identity_dev"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d kinetix_identity_dev"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -27,10 +29,10 @@ services:
       - PORT=5000
       - DB_HOST=db
       - DB_PORT=5432
-      - DB_USERNAME=postgres
-      - DB_PASSWORD=postgrespassword
+      - DB_USERNAME=${DB_USERNAME:?DB_USERNAME is required}
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
       - DB_DATABASE=kinetix_identity_dev
-      - JWT_SECRET=kinetix_super_secret_jwt_key_2026
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
       - JWT_EXPIRES_IN=86400s
     depends_on:
       db:

@@ -37,15 +37,15 @@ import IdentityGrpcController from "./adapters/controllers/identity_grpc.control
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
         const dbPassword = config.get<string>("DB_PASSWORD") || process.env.DB_PASSWORD
-        if (!dbPassword && process.env.NODE_ENV === "production") {
-          throw new Error("CRITICAL SECURITY ERROR: DB_PASSWORD environment variable is required!")
+        if (!dbPassword) {
+          throw new Error("DB_PASSWORD is required and has no default. Set it in the environment.")
         }
         return {
           type: "postgres",
           host: config.get<string>("DB_HOST", "localhost"),
           port: Number(config.get<number>("DB_PORT", 5432)),
           username: config.get<string>("DB_USERNAME", "postgres"),
-          password: dbPassword || "postgrespassword",
+          password: dbPassword,
           database: config.get<string>("DB_DATABASE", "kinetix_identity_dev"),
           entities: [UserTypeormEntity, ProfileTypeormEntity, MerchantVerificationTypeormEntity, MerchantTypeormEntity],
           synchronize: false
@@ -63,11 +63,14 @@ import IdentityGrpcController from "./adapters/controllers/identity_grpc.control
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
         const jwtSecret = config.get<string>("JWT_SECRET") || process.env.JWT_SECRET
-        if (!jwtSecret && process.env.NODE_ENV === "production") {
-          throw new Error("CRITICAL SECURITY ERROR: JWT_SECRET environment variable is required!")
+        if (!jwtSecret) {
+          throw new Error("JWT_SECRET is required and has no default. Set it in the environment.")
+        }
+        if (jwtSecret.length < 32) {
+          throw new Error("JWT_SECRET must be at least 32 characters.")
         }
         return {
-          secret: jwtSecret || "kinetix_super_secret_jwt_key_2026",
+          secret: jwtSecret,
           signOptions: {
             expiresIn: 86400
           }
