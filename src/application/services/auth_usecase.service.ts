@@ -45,7 +45,7 @@ class AuthUsecaseService {
     const saltRounds: number = 10
     const passwordHash: string = await bcrypt.hash(dto.password, saltRounds)
 
-    const newUser = new UserEntity(0, dto.email, passwordHash, dto.role)
+    const newUser = new UserEntity(0, dto.email, passwordHash, "customer")
     const savedUser: UserEntity = await this.userRepository.save(newUser)
 
     const payload = { sub: savedUser.id, email: savedUser.email, role: savedUser.role }
@@ -75,24 +75,6 @@ class AuthUsecaseService {
     }
   }
 
-  async handleOAuthCallback(email: string, provider: "google" | "github"): Promise<AuthTokenOutputDto> {
-    let user: UserEntity | null = await this.userRepository.findByEmail(email)
-
-    if (!user) {
-      const dummyPassword = await bcrypt.hash(`oauth_${provider}_${Date.now()}`, 10)
-      user = new UserEntity(0, email, dummyPassword, "customer")
-      user = await this.userRepository.save(user)
-    }
-
-    const payload = { sub: user.id, email: user.email, role: user.role, provider }
-    const accessToken: string = this.jwtService.sign(payload)
-
-    return new AuthTokenOutputDto(accessToken, 86400, {
-      id: user.id,
-      email: user.email,
-      role: user.role
-    })
-  }
 }
 
 export default AuthUsecaseService

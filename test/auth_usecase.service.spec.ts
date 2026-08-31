@@ -27,13 +27,32 @@ describe("AuthUsecaseService Unit Tests", () => {
 
     const result = await service.register({
       email: "newuser@kinetix.com",
-      password: "password123",
-      role: "seller"
+      password: "password123"
     })
 
     expect(result.accessToken).toBe("mocked_jwt_token")
     expect(result.user.email).toBe("newuser@kinetix.com")
     expect(mockUserRepository.save).toHaveBeenCalled()
+  })
+
+  it("should always register as customer, ignoring any role supplied by the caller", async () => {
+    mockUserRepository.findByEmail.mockResolvedValue(null)
+    mockUserRepository.save.mockImplementation(async (user: UserEntity) => {
+      return new UserEntity(1, user.email, user.passwordHash, user.role)
+    })
+
+    const result = await service.register({
+      email: "attacker@kinetix.com",
+      password: "password123",
+      role: "admin"
+    } as any)
+
+    const persisted: UserEntity = mockUserRepository.save.mock.calls[0][0]
+    expect(persisted.role).toBe("customer")
+    expect(result.user.role).toBe("customer")
+    expect(mockJwtService.sign).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "customer" })
+    )
   })
 
   it("should setup 2FA secret and return totp QR code URL", async () => {

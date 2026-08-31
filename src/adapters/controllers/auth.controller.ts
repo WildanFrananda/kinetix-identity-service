@@ -31,14 +31,6 @@ class AuthController {
   ): Promise<{ twoFactorSecret: string; qrCodeUrl: string }> {
     return await this.authUsecase.setupTwoFactor(userId)
   }
-
-  @Post("oauth/callback")
-  @HttpCode(HttpStatus.OK)
-  async oauthCallback(
-    @Body() dto: { email: string; provider: "google" | "github" }
-  ): Promise<AuthTokenOutputDto> {
-    return await this.authUsecase.handleOAuthCallback(dto.email, dto.provider)
-  }
 }
 
 export default AuthController
