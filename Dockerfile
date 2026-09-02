@@ -1,5 +1,5 @@
 # Multi-Stage Production Dockerfile for Kinetix Identity Service (Bun + NestJS)
-FROM oven/bun:1-alpine AS builder
+FROM oven/bun:1-alpine@sha256:07235578f79ef8c6f97d94aee7938e76f5cdba5f21ae5dbfdd3d3d38058437eb AS builder
 
 WORKDIR /app
 
@@ -7,9 +7,9 @@ COPY package.json bun.lock* ./
 RUN bun install
 
 COPY . .
-RUN bun run build || tsc
+RUN bun run build
 
-FROM oven/bun:1-alpine AS runner
+FROM oven/bun:1-alpine@sha256:07235578f79ef8c6f97d94aee7938e76f5cdba5f21ae5dbfdd3d3d38058437eb AS runner
 
 WORKDIR /app
 
