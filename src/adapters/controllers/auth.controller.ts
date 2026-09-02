@@ -5,7 +5,7 @@ import LoginInputDto from "../../application/dto/login_input.dto"
 import RegisterUserInputDto from "../../application/dto/register_user_input.dto"
 import AuthTokenOutputDto from "../../application/dto/auth_token_output.dto"
 
-@Controller("api/auth")
+@Controller("api/v1/auth")
 @UseGuards(ThrottlerGuard)
 class AuthController {
   constructor(private readonly authUsecase: AuthUsecaseService) {}

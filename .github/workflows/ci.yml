@@ -1,0 +1,89 @@
+name: CI
+
+# Identity had no migrations at all until S3 — `synchronize: false` with an empty migrations
+# directory, so the schema was simply never created. The job that matters here is `migrations`:
+# it applies them to an empty database and then asks TypeORM to generate one from the entities.
+# If it can, the entities have drifted ahead of the committed schema and the build fails.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      # `nest build` runs tsc with the project's strict settings, and it must not be masked:
+      # the Dockerfile used to fall back to `|| tsc`, producing an image whose entry point did
+      # not exist while reporting success.
+      - run: bun run build
+
+  unit:
+    # Node, not Bun. jest 30's environment walks the global object and reads
+    # `ReadableStreamDefaultReader.closed` off the prototype, which throws under Bun:
+    # "TypeError: The 'closed' getter can only be used on a ReadableStreamDefaultReader".
+    # The same suite passes 5/5 under Node. The service still runs on Bun; only the test
+    # runner needs a different host.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npx jest --config jest.config.cjs
+
+  migrations:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci-ephemeral-not-a-deployed-credential
+          POSTGRES_DB: kinetix_identity_dev
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U ci"
+          --health-interval=10s --health-timeout=5s --health-retries=5
+
+    env:
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_USERNAME: ci
+      DB_PASSWORD: ci-ephemeral-not-a-deployed-credential
+      DB_DATABASE: kinetix_identity_dev
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+
+      - name: Apply migrations to an empty database
+        run: bun dist/migrate.js
+
+      - name: A second run must apply nothing
+        run: bun dist/migrate.js | grep -q 'schema is up to date'
+
+      # The drift gate. `migration:generate` exits non-zero with "No changes in database schema
+      # were found" when the entities and the schema agree — so a SUCCESSFUL generate means
+      # someone changed an entity without writing the migration.
+      - name: Entities must not have drifted from the migrations
+        run: |
+          if bunx typeorm migration:generate -d src/data-source.ts src/migrations/DriftCheck; then
+            echo "entities have drifted: a migration was generated that is not committed"
+            cat src/migrations/*DriftCheck.ts
+            exit 1
+          fi
+          echo "no drift: the committed migrations describe the entities exactly"

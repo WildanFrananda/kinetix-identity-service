@@ -1,0 +1,94 @@
+# Kinetix identity CI — GitLab.
+#
+# ⚠ PAIRED FILE: .github/workflows/ci.yml
+# `origin` is GitHub and GitLab is a mirror, so GitHub Actions is the pipeline that gates
+# merges; this one runs on the mirror. They assert the SAME THINGS and must be changed
+# together. If you edit one and not the other, the two platforms disagree about whether the
+# same commit is good — which is worse than having only one.
+#
+# The job that matters here is `migrations`. Identity had no migrations at all until S3 —
+# `synchronize: false` with an empty migrations directory, so the schema was never created.
+
+include:
+  - project: 'WildanFrananda/kinetix-infrastructure'
+    ref: main
+    file: '/ci/service-ci.yml'
+
+stages:
+  - verify
+  - build
+  - test
+
+.bun:
+  image: oven/bun:1-alpine
+  before_script:
+    - bun install --frozen-lockfile
+
+secret-scan:
+  extends: .secret-scan
+
+build-image:
+  extends: .build-image
+
+typecheck:
+  extends: .bun
+  stage: verify
+  # `nest build` runs tsc with the project's strict settings. It must not be masked: the
+  # Dockerfile used to fall back to `|| tsc`, producing an image whose entry point did not
+  # exist while reporting success.
+  script:
+    - bun run build
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+unit:
+  # Node, not Bun. jest 30's environment walks the global object and reads
+  # `ReadableStreamDefaultReader.closed` off the prototype, which throws under Bun:
+  # "TypeError: The 'closed' getter can only be used on a ReadableStreamDefaultReader".
+  # The same suite passes 5/5 under Node. The service still runs on Bun; only the test runner
+  # needs a different host.
+  image: node:22-alpine
+  stage: test
+  before_script:
+    - npm ci
+  script:
+    - npx jest --config jest.config.cjs
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+migrations:
+  extends: .bun
+  stage: test
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: ci
+    POSTGRES_PASSWORD: ci-ephemeral-not-a-deployed-credential
+    POSTGRES_DB: kinetix_identity_dev
+    POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+    DB_HOST: postgres
+    DB_PORT: "5432"
+    DB_USERNAME: ci
+    DB_PASSWORD: ci-ephemeral-not-a-deployed-credential
+    DB_DATABASE: kinetix_identity_dev
+  script:
+    - bun run build
+    - bun dist/migrate.js
+    # A second run must apply nothing. If it does, the migrations are not idempotent.
+    - bun dist/migrate.js | grep -q 'schema is up to date'
+    # The drift gate. `migration:generate` exits non-zero with "No changes in database schema
+    # were found" when entities and schema agree — so a SUCCESSFUL generate means someone
+    # changed an entity without writing the migration.
+    - |
+      if bunx typeorm migration:generate -d src/data-source.ts src/migrations/DriftCheck; then
+        echo "entities have drifted: a migration was generated that is not committed"
+        cat src/migrations/*DriftCheck.ts
+        exit 1
+      fi
+      echo "no drift: the committed migrations describe the entities exactly"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

@@ -19,6 +19,7 @@ import UserProfileUsecaseService from "./application/services/user_profile_useca
 import SellerOnboardingUsecaseService from "./application/services/seller_onboarding_usecase.service"
 
 import AuthController from "./adapters/controllers/auth.controller"
+import HealthController from "./adapters/controllers/health.controller"
 import UserProfileController from "./adapters/controllers/user_profile.controller"
 import SellerOnboardingController from "./adapters/controllers/seller_onboarding.controller"
 import IdentityGrpcController from "./adapters/controllers/identity_grpc.controller"
@@ -78,7 +79,13 @@ import IdentityGrpcController from "./adapters/controllers/identity_grpc.control
       }
     })
   ],
-  controllers: [AuthController, UserProfileController, SellerOnboardingController, IdentityGrpcController],
+  controllers: [
+    HealthController,
+    AuthController,
+    UserProfileController,
+    SellerOnboardingController,
+    IdentityGrpcController
+  ],
   providers: [
     AuthUsecaseService,
     UserProfileUsecaseService,

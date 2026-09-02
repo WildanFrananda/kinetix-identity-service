@@ -3,7 +3,7 @@ import UserProfileUsecaseService from "../../application/services/user_profile_u
 import UpdateProfileInputDto from "../../application/dto/update_profile_input.dto"
 import ProfileEntity from "../../domain/entities/profile.entity"
 
-@Controller("api/users")
+@Controller("api/v1/users")
 class UserProfileController {
   constructor(private readonly profileUsecase: UserProfileUsecaseService) {}
 

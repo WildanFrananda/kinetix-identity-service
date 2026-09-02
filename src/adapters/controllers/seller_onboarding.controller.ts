@@ -4,7 +4,7 @@ import OnboardSellerInputDto from "../../application/dto/onboard_seller_input.dt
 import MerchantVerificationEntity from "../../domain/entities/merchant_verification.entity"
 import MerchantEntity from "../../domain/entities/merchant.entity"
 
-@Controller("api/sellers")
+@Controller("api/v1/sellers")
 class SellerOnboardingController {
   constructor(private readonly sellerOnboardingUsecase: SellerOnboardingUsecaseService) {}
 
