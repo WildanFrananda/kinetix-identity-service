@@ -1,8 +1,11 @@
-import { Body, Controller, HttpCode, HttpStatus, Param, ParseIntPipe, Post } from "@nestjs/common"
+import { Body, Controller, HttpCode, HttpStatus, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common"
 import SellerOnboardingUsecaseService from "../../application/services/seller_onboarding_usecase.service"
 import OnboardSellerInputDto from "../../application/dto/onboard_seller_input.dto"
 import MerchantVerificationEntity from "../../domain/entities/merchant_verification.entity"
 import MerchantEntity from "../../domain/entities/merchant.entity"
+import RolesGuard from "../guards/roles.guard"
+import SelfOrStaffGuard, { SelfParam } from "../guards/self_or_staff.guard"
+import { Roles } from "../decorators/auth.decorators"
 
 @Controller("api/v1/sellers")
 class SellerOnboardingController {
@@ -10,6 +13,8 @@ class SellerOnboardingController {
 
   @Post(":id/onboard")
   @HttpCode(HttpStatus.CREATED)
+  @UseGuards(SelfOrStaffGuard)
+  @SelfParam("id")
   async onboardSeller(
     @Param("id", ParseIntPipe) userId: number,
     @Body() dto: OnboardSellerInputDto
@@ -19,9 +24,9 @@ class SellerOnboardingController {
 
   @Post(":id/verify")
   @HttpCode(HttpStatus.OK)
-  async approveVerification(
-    @Param("id", ParseIntPipe) userId: number
-  ): Promise<MerchantEntity> {
+  @UseGuards(RolesGuard)
+  @Roles("admin")
+  async approveVerification(@Param("id", ParseIntPipe) userId: number): Promise<MerchantEntity> {
     return await this.sellerOnboardingUsecase.approveVerification(userId)
   }
 }

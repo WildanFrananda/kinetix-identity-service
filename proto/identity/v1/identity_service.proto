@@ -50,10 +50,25 @@ message ValidateTokenRequest {
 }
 
 message ValidateTokenResponse {
+  // Aligned with the frozen identity.v1 contract published at kinetix-contracts v1.0.0.
+  //
+  // This message used to be {valid, user_id, email, role}, and the handler had already been
+  // rewritten to answer with a principal — so `principal_id` and `kind` were being dropped
+  // silently on the way out and the RPC returned `{"valid": true}` and nothing else. A field
+  // the proto does not declare is not an error; it simply vanishes.
+  //
+  // `user_id` is gone rather than kept alongside: the token's subject is a principal UUID now,
+  // and an int64 field that used to carry the account id is exactly the sort of thing a caller
+  // keeps reading long after it stopped meaning what it did.
+  //
+  // `kind` is a string here, matching ResolvePrincipalResponse above; the contract types it as
+  // the PrincipalKind enum. That last difference closes in S9, when this service compiles
+  // against the generated package instead of a hand-kept copy — which is the whole reason this
+  // file and the contract could drift in the first place.
   bool valid = 1;
-  int64 user_id = 2;
-  string email = 3;
-  string role = 4;
+  string principal_id = 2;
+  string kind = 3;
+  string reason = 4;
 }
 
 // A row id inside one service's own database. Every service kept its own integer keys and no

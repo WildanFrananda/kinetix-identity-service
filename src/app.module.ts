@@ -1,6 +1,6 @@
 import { Module } from "@nestjs/common"
+import { APP_GUARD } from "@nestjs/core"
 import { ConfigModule, ConfigService } from "@nestjs/config"
-import { JwtModule } from "@nestjs/jwt"
 import { TypeOrmModule } from "@nestjs/typeorm"
 import { ThrottlerModule } from "@nestjs/throttler"
 
@@ -25,6 +25,16 @@ import SellerOnboardingController from "./adapters/controllers/seller_onboarding
 import IdentityGrpcController from "./adapters/controllers/identity_grpc.controller"
 import PrincipalAliasTypeormEntity from "./infrastructure/persistence/entities/principal_alias_typeorm.entity"
 import PrincipalTypeormEntity from "./infrastructure/persistence/entities/principal_typeorm.entity"
+import RefreshTokenTypeormEntity from "./infrastructure/persistence/entities/refresh_token_typeorm.entity"
+import RevokedAccessTokenTypeormEntity from "./infrastructure/persistence/entities/revoked_access_token_typeorm.entity"
+
+import JwtKeyProvider from "./infrastructure/crypto/jwt_key_provider"
+import TokenService from "./application/services/token.service"
+import PrincipalResolverService from "./application/services/principal_resolver.service"
+import JwtAuthGuard from "./adapters/guards/jwt_auth.guard"
+import RolesGuard from "./adapters/guards/roles.guard"
+import SelfOrStaffGuard from "./adapters/guards/self_or_staff.guard"
+import JwksController from "./adapters/controllers/jwks.controller"
 
 @Module({
   imports: [
@@ -53,6 +63,8 @@ import PrincipalTypeormEntity from "./infrastructure/persistence/entities/princi
           entities: [
             PrincipalTypeormEntity,
             PrincipalAliasTypeormEntity,
+            RefreshTokenTypeormEntity,
+            RevokedAccessTokenTypeormEntity,
             UserTypeormEntity,
             ProfileTypeormEntity,
             MerchantVerificationTypeormEntity,
@@ -65,39 +77,32 @@ import PrincipalTypeormEntity from "./infrastructure/persistence/entities/princi
     TypeOrmModule.forFeature([
       PrincipalTypeormEntity,
       PrincipalAliasTypeormEntity,
+      RefreshTokenTypeormEntity,
+      RevokedAccessTokenTypeormEntity,
       UserTypeormEntity,
       ProfileTypeormEntity,
       MerchantVerificationTypeormEntity,
       MerchantTypeormEntity
-    ]),
-    JwtModule.registerAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => {
-        const jwtSecret = config.get<string>("JWT_SECRET") || process.env.JWT_SECRET
-        if (!jwtSecret) {
-          throw new Error("JWT_SECRET is required and has no default. Set it in the environment.")
-        }
-        if (jwtSecret.length < 32) {
-          throw new Error("JWT_SECRET must be at least 32 characters.")
-        }
-        return {
-          secret: jwtSecret,
-          signOptions: {
-            expiresIn: 86400
-          }
-        }
-      }
-    })
+    ])
   ],
   controllers: [
     HealthController,
+    JwksController,
     AuthController,
     UserProfileController,
     SellerOnboardingController,
     IdentityGrpcController
   ],
   providers: [
+    JwtKeyProvider,
+    TokenService,
+    PrincipalResolverService,
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard
+    },
+    RolesGuard,
+    SelfOrStaffGuard,
     AuthUsecaseService,
     UserProfileUsecaseService,
     SellerOnboardingUsecaseService,

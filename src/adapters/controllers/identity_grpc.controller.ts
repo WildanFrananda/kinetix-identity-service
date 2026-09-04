@@ -1,10 +1,22 @@
 import { Controller, Inject } from "@nestjs/common"
 import { GrpcMethod } from "@nestjs/microservices"
-import { JwtService } from "@nestjs/jwt"
 import { InjectRepository } from "@nestjs/typeorm"
 import { Repository } from "typeorm"
 import PrincipalAliasTypeormEntity from "../../infrastructure/persistence/entities/principal_alias_typeorm.entity"
 import PrincipalTypeormEntity from "../../infrastructure/persistence/entities/principal_typeorm.entity"
+import TokenService from "../../application/services/token.service"
+import type {
+  GetMerchantInfoRequest,
+  GetMerchantInfoResponse,
+  GetPrincipalRequest,
+  GetPrincipalResponse,
+  GetUserProfileRequest,
+  GetUserProfileResponse,
+  ResolvePrincipalRequest,
+  ResolvePrincipalResponse,
+  ValidateTokenRequest,
+  ValidateTokenResponse
+} from "../../types/identity_grpc.type"
 import UserProfileUsecaseService from "../../application/services/user_profile_usecase.service"
 import UserRepositoryPort from "../../domain/ports/user_repository.port"
 import MerchantRepositoryPort from "../../domain/ports/merchant_repository.port"
@@ -31,7 +43,7 @@ class IdentityGrpcController {
     private readonly userRepository: UserRepositoryPort,
     @Inject("MerchantRepositoryPort")
     private readonly merchantRepository: MerchantRepositoryPort,
-    private readonly jwtService: JwtService,
+    private readonly tokenService: TokenService,
     @InjectRepository(PrincipalAliasTypeormEntity)
     private readonly aliasRepository: Repository<PrincipalAliasTypeormEntity>,
     @InjectRepository(PrincipalTypeormEntity)
@@ -39,15 +51,7 @@ class IdentityGrpcController {
   ) {}
 
   @GrpcMethod("IdentityService", "ResolvePrincipal")
-  async resolvePrincipal(data: {
-    service_local_id?: { service?: string; local_id?: string; localId?: string }
-    serviceLocalId?: { service?: string; local_id?: string; localId?: string }
-  }): Promise<{
-    found: boolean
-    principal_id: string
-    kind: string
-    display_name: string
-  }> {
+  async resolvePrincipal(data: ResolvePrincipalRequest): Promise<ResolvePrincipalResponse> {
     const key = data.serviceLocalId ?? data.service_local_id
     const service: string = key?.service ?? ""
     const localId: string = key?.localId ?? key?.local_id ?? ""
@@ -76,13 +80,7 @@ class IdentityGrpcController {
   }
 
   @GrpcMethod("IdentityService", "GetPrincipal")
-  async getPrincipal(data: { principal_id?: string; principalId?: string }): Promise<{
-    found: boolean
-    principal_id: string
-    kind: string
-    display_name: string
-    aliases: { service: string; local_id: string }[]
-  }> {
+  async getPrincipal(data: GetPrincipalRequest): Promise<GetPrincipalResponse> {
     const principalId: string = data.principalId ?? data.principal_id ?? ""
 
     if (principalId === "") {
@@ -107,16 +105,7 @@ class IdentityGrpcController {
   }
 
   @GrpcMethod("IdentityService", "GetUserProfile")
-  async getUserProfile(data: { user_id: number }): Promise<{
-    user_id: number
-    email: string
-    full_name: string
-    phone_number: string
-    street_address: string
-    city: string
-    postal_code: string
-    role: string
-  }> {
+  async getUserProfile(data: GetUserProfileRequest): Promise<GetUserProfileResponse> {
     const userId: number = Number(data.user_id)
     try {
       const user: UserEntity | null = await withTimeout(this.userRepository.findById(userId))
@@ -147,13 +136,7 @@ class IdentityGrpcController {
   }
 
   @GrpcMethod("IdentityService", "GetMerchantInfo")
-  async getMerchantInfo(data: { user_id: number }): Promise<{
-    user_id: number
-    store_name: string
-    business_registration_number: string
-    tax_id: string
-    status: string
-  }> {
+  async getMerchantInfo(data: GetMerchantInfoRequest): Promise<GetMerchantInfoResponse> {
     const userId: number = Number(data.user_id)
     try {
       const merchant: MerchantEntity | null = await withTimeout(this.merchantRepository.findByUserId(userId))
@@ -187,28 +170,25 @@ class IdentityGrpcController {
   }
 
   @GrpcMethod("IdentityService", "ValidateToken")
-  async validateToken(data: { access_token: string }): Promise<{
-    valid: boolean
-    user_id: number
-    email: string
-    role: string
-  }> {
-    try {
-      const payload = this.jwtService.verify(data.access_token)
-      return {
-        valid: true,
-        user_id: payload.sub,
-        email: payload.email,
-        role: payload.role
-      }
-    } catch {
-      return {
-        valid: false,
-        user_id: 0,
-        email: "",
-        role: ""
-      }
+  async validateToken(data: ValidateTokenRequest): Promise<ValidateTokenResponse> {
+    const token: string = data.accessToken ?? data.access_token ?? ""
+    if (token === "") {
+      return { valid: false, principal_id: "", kind: "PRINCIPAL_KIND_UNSPECIFIED", reason: "no token supplied" }
     }
+
+    let claims
+    try {
+      claims = await this.tokenService.verifyAccess(token)
+    } catch {
+      return { valid: false, principal_id: "", kind: "PRINCIPAL_KIND_UNSPECIFIED", reason: "invalid token" }
+    }
+
+    const principal = await withTimeout(this.principalRepository.findOne({ where: { id: claims.sub } }))
+    if (!principal) {
+      return { valid: false, principal_id: "", kind: "PRINCIPAL_KIND_UNSPECIFIED", reason: "unknown principal" }
+    }
+
+    return { valid: true, principal_id: principal.id, kind: principal.kind, reason: "" }
   }
 }
 
