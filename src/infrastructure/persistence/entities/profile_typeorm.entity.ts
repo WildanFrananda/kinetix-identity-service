@@ -1,4 +1,4 @@
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from "typeorm"
+import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm"
 
 import UserTypeormEntity from "./user_typeorm.entity"
 
@@ -10,10 +10,6 @@ class ProfileTypeormEntity {
   @Column({ unique: true })
   userId!: number
 
-  // The relation is declared, not just the column. Without it the entity described a schema
-  // with no foreign key while the database had one, so `migration:generate` proposed dropping
-  // and re-adding all three on every run — a drift check built on that would fail forever on a
-  // difference that is not one.
   @ManyToOne(() => UserTypeormEntity, { onDelete: "CASCADE", nullable: false })
   @JoinColumn({ name: "userId" })
   user?: UserTypeormEntity
@@ -35,6 +31,12 @@ class ProfileTypeormEntity {
 
   @Column({ nullable: true })
   avatarUrl?: string
+
+  @CreateDateColumn({ type: "timestamptz" })
+  createdAt!: Date
+
+  @UpdateDateColumn({ type: "timestamptz" })
+  updatedAt!: Date
 }
 
 export default ProfileTypeormEntity

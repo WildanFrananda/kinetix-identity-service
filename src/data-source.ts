@@ -3,6 +3,7 @@ import { DataSource } from "typeorm"
 import { InitialSchema1788322826135 } from "./migrations/1788322826135-InitialSchema"
 import { Principals1788512628577 } from "./migrations/1788512628577-Principals"
 import { TokenLifecycle1788900000000 } from "./migrations/1788900000000-TokenLifecycle"
+import { ProfileProvenance1788950000000 } from "./migrations/1788950000000-ProfileProvenance"
 
 import MerchantTypeormEntity from "./infrastructure/persistence/entities/merchant_typeorm.entity"
 import MerchantVerificationTypeormEntity from "./infrastructure/persistence/entities/merchant_verification_typeorm.entity"
@@ -35,6 +36,6 @@ export default new DataSource({
     MerchantVerificationTypeormEntity,
     MerchantTypeormEntity
   ],
-  migrations: [InitialSchema1788322826135, Principals1788512628577, TokenLifecycle1788900000000],
+  migrations: [InitialSchema1788322826135, Principals1788512628577, TokenLifecycle1788900000000, ProfileProvenance1788950000000],
   synchronize: false
 })
