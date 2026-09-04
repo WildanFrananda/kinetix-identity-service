@@ -28,6 +28,22 @@ class TypeormMerchantRepositoryAdapter implements MerchantRepositoryPort {
     )
   }
 
+  async findBySlug(slug: string): Promise<MerchantEntity | null> {
+    const record = await this.repo.findOne({ where: { slug } })
+    if (!record) return null
+    return new MerchantEntity(
+      record.id,
+      record.userId,
+      record.storeName,
+      record.slug,
+      record.businessRegistrationNumber,
+      record.taxId,
+      record.status,
+      record.description,
+      record.verifiedAt
+    )
+  }
+
   async save(merchant: MerchantEntity): Promise<MerchantEntity> {
     const entity = this.repo.create({
       id: merchant.id > 0 ? merchant.id : undefined,

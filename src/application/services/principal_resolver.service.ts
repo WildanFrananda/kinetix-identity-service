@@ -50,6 +50,27 @@ class PrincipalResolverService {
     }
   }
 
+  async registerAlias(principalId: string, service: string, localId: string): Promise<void> {
+    const existing = await this.aliasRepository.findOne({ where: { service, localId } })
+    if (existing) {
+      if (existing.principalId !== principalId) {
+        throw new Error(
+          `${service}/${localId} already resolves to principal ${existing.principalId}; refusing to repoint it to ${principalId}`
+        )
+      }
+      return
+    }
+
+    try {
+      await this.aliasRepository.save(this.aliasRepository.create({ principalId, service, localId }))
+    } catch {
+      const winner = await this.aliasRepository.findOne({ where: { service, localId } })
+      if (!winner || winner.principalId !== principalId) {
+        throw new Error(`could not register alias ${service}/${localId}`)
+      }
+    }
+  }
+
   async syncKind(principalId: string, role: string): Promise<void> {
     const kind: string = principalKindForRole(role as UserRole)
     await this.principalRepository.update({ id: principalId }, { kind })
