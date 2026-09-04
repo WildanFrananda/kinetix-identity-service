@@ -1,4 +1,3 @@
-# Multi-Stage Production Dockerfile for Kinetix Identity Service (Bun + NestJS)
 FROM oven/bun:1-alpine@sha256:07235578f79ef8c6f97d94aee7938e76f5cdba5f21ae5dbfdd3d3d38058437eb AS builder
 
 WORKDIR /app
@@ -25,5 +24,9 @@ COPY --from=builder /app/proto ./proto
 EXPOSE 5000 50052
 
 USER bun
+
+
+HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=3 \
+    CMD bun -e 'const r = await fetch("http://127.0.0.1:5000/health/ready"); process.exit(r.ok ? 0 : 1)' || exit 1
 
 CMD ["bun", "run", "dist/main.js"]
