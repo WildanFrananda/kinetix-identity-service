@@ -1,6 +1,10 @@
 import { Controller, Inject } from "@nestjs/common"
 import { GrpcMethod } from "@nestjs/microservices"
 import { JwtService } from "@nestjs/jwt"
+import { InjectRepository } from "@nestjs/typeorm"
+import { Repository } from "typeorm"
+import PrincipalAliasTypeormEntity from "../../infrastructure/persistence/entities/principal_alias_typeorm.entity"
+import PrincipalTypeormEntity from "../../infrastructure/persistence/entities/principal_typeorm.entity"
 import UserProfileUsecaseService from "../../application/services/user_profile_usecase.service"
 import UserRepositoryPort from "../../domain/ports/user_repository.port"
 import MerchantRepositoryPort from "../../domain/ports/merchant_repository.port"
@@ -27,8 +31,80 @@ class IdentityGrpcController {
     private readonly userRepository: UserRepositoryPort,
     @Inject("MerchantRepositoryPort")
     private readonly merchantRepository: MerchantRepositoryPort,
-    private readonly jwtService: JwtService
+    private readonly jwtService: JwtService,
+    @InjectRepository(PrincipalAliasTypeormEntity)
+    private readonly aliasRepository: Repository<PrincipalAliasTypeormEntity>,
+    @InjectRepository(PrincipalTypeormEntity)
+    private readonly principalRepository: Repository<PrincipalTypeormEntity>
   ) {}
+
+  @GrpcMethod("IdentityService", "ResolvePrincipal")
+  async resolvePrincipal(data: {
+    service_local_id?: { service?: string; local_id?: string; localId?: string }
+    serviceLocalId?: { service?: string; local_id?: string; localId?: string }
+  }): Promise<{
+    found: boolean
+    principal_id: string
+    kind: string
+    display_name: string
+  }> {
+    const key = data.serviceLocalId ?? data.service_local_id
+    const service: string = key?.service ?? ""
+    const localId: string = key?.localId ?? key?.local_id ?? ""
+
+    if (service === "" || localId === "") {
+      return { found: false, principal_id: "", kind: "PRINCIPAL_KIND_UNSPECIFIED", display_name: "" }
+    }
+
+    const alias = await withTimeout(
+      this.aliasRepository.findOne({
+        where: { service, localId },
+        relations: { principal: true }
+      })
+    )
+
+    if (!alias || !alias.principal) {
+      return { found: false, principal_id: "", kind: "PRINCIPAL_KIND_UNSPECIFIED", display_name: "" }
+    }
+
+    return {
+      found: true,
+      principal_id: alias.principal.id,
+      kind: alias.principal.kind,
+      display_name: alias.principal.displayName ?? ""
+    }
+  }
+
+  @GrpcMethod("IdentityService", "GetPrincipal")
+  async getPrincipal(data: { principal_id?: string; principalId?: string }): Promise<{
+    found: boolean
+    principal_id: string
+    kind: string
+    display_name: string
+    aliases: { service: string; local_id: string }[]
+  }> {
+    const principalId: string = data.principalId ?? data.principal_id ?? ""
+
+    if (principalId === "") {
+      return { found: false, principal_id: "", kind: "PRINCIPAL_KIND_UNSPECIFIED", display_name: "", aliases: [] }
+    }
+
+    const principal = await withTimeout(this.principalRepository.findOne({ where: { id: principalId } }))
+
+    if (!principal) {
+      return { found: false, principal_id: "", kind: "PRINCIPAL_KIND_UNSPECIFIED", display_name: "", aliases: [] }
+    }
+
+    const aliases = await withTimeout(this.aliasRepository.find({ where: { principalId } }))
+
+    return {
+      found: true,
+      principal_id: principal.id,
+      kind: principal.kind,
+      display_name: principal.displayName ?? "",
+      aliases: aliases.map((a) => ({ service: a.service, local_id: a.localId }))
+    }
+  }
 
   @GrpcMethod("IdentityService", "GetUserProfile")
   async getUserProfile(data: { user_id: number }): Promise<{

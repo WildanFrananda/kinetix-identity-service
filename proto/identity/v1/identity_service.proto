@@ -2,7 +2,17 @@ syntax = "proto3";
 
 package identity.v1;
 
+// NOTE: this file is a local copy, and S9 replaces it with the published kinetix-contracts
+// package. Until then the two new RPCs below are added here rather than the whole contract being
+// adopted: identity/v1 in kinetix-contracts retypes GetUserProfile and GetMerchantInfo to take a
+// principal_id, and kinetix-warehouse-service calls both with an integer user id today. Swapping
+// the whole file would break a live caller to land a table.
+
 service IdentityService {
+  // P3-IDM-01. The lookup every other service needs and none of them had.
+  rpc ResolvePrincipal (ResolvePrincipalRequest) returns (ResolvePrincipalResponse);
+  rpc GetPrincipal (GetPrincipalRequest) returns (GetPrincipalResponse);
+
   rpc GetUserProfile (GetUserProfileRequest) returns (GetUserProfileResponse);
   rpc GetMerchantInfo (GetMerchantInfoRequest) returns (GetMerchantInfoResponse);
   rpc ValidateToken (ValidateTokenRequest) returns (ValidateTokenResponse);
@@ -44,4 +54,38 @@ message ValidateTokenResponse {
   int64 user_id = 2;
   string email = 3;
   string role = 4;
+}
+
+// A row id inside one service's own database. Every service kept its own integer keys and no
+// two agreed on what "user 42" meant; this says which database the id belongs to.
+message ServiceLocalId {
+  string service = 1;
+  // Text, not an integer: warehouse and review key on strings.
+  string local_id = 2;
+}
+
+message ResolvePrincipalRequest {
+  ServiceLocalId service_local_id = 1;
+}
+
+message ResolvePrincipalResponse {
+  // False means no such principal. It does not mean an empty one — the RPCs above this file's
+  // new ones return zero-valued messages on both a miss and a database failure, and callers
+  // have been sniffing empty strings to tell the difference.
+  bool found = 1;
+  string principal_id = 2;
+  string kind = 3;
+  string display_name = 4;
+}
+
+message GetPrincipalRequest {
+  string principal_id = 1;
+}
+
+message GetPrincipalResponse {
+  bool found = 1;
+  string principal_id = 2;
+  string kind = 3;
+  string display_name = 4;
+  repeated ServiceLocalId aliases = 5;
 }

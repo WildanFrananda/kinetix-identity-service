@@ -1,9 +1,12 @@
 import { DataSource } from "typeorm"
 
 import { InitialSchema1788322826135 } from "./migrations/1788322826135-InitialSchema"
+import { Principals1788512628577 } from "./migrations/1788512628577-Principals"
 
 import MerchantTypeormEntity from "./infrastructure/persistence/entities/merchant_typeorm.entity"
 import MerchantVerificationTypeormEntity from "./infrastructure/persistence/entities/merchant_verification_typeorm.entity"
+import PrincipalAliasTypeormEntity from "./infrastructure/persistence/entities/principal_alias_typeorm.entity"
+import PrincipalTypeormEntity from "./infrastructure/persistence/entities/principal_typeorm.entity"
 import ProfileTypeormEntity from "./infrastructure/persistence/entities/profile_typeorm.entity"
 import UserTypeormEntity from "./infrastructure/persistence/entities/user_typeorm.entity"
 
@@ -20,11 +23,13 @@ export default new DataSource({
   password,
   database: process.env.DB_DATABASE ?? "kinetix_identity_dev",
   entities: [
+    PrincipalTypeormEntity,
+    PrincipalAliasTypeormEntity,
     UserTypeormEntity,
     ProfileTypeormEntity,
     MerchantVerificationTypeormEntity,
     MerchantTypeormEntity
   ],
-  migrations: [InitialSchema1788322826135],
+  migrations: [InitialSchema1788322826135, Principals1788512628577],
   synchronize: false
 })

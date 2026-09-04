@@ -32,6 +32,9 @@ async function bootstrap() {
     options: {
       package: "identity.v1",
       protoPath: join(process.cwd(), "proto/identity/v1/identity_service.proto"),
+      loader: {
+        keepCase: true
+      },
       url: `0.0.0.0:${grpcPort}`,
       onLoadPackageDefinition: (pkg, server) => {
         new ReflectionService(pkg).addToServer(server)
