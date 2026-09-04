@@ -1,8 +1,3 @@
-type TwoFactorSetup = {
-  twoFactorSecret: string
-  qrCodeUrl: string
-}
-
 type CurrentUserView = {
   principalId: string
   userId: number
@@ -22,4 +17,4 @@ type LogoutBody = {
   refreshToken?: string
 }
 
-export type { AuthenticatedAccount, CurrentUserView, LogoutBody, TwoFactorSetup }
+export type { AuthenticatedAccount, CurrentUserView, LogoutBody }

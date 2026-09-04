@@ -9,6 +9,7 @@ import RefreshTokenTypeormEntity from "../../infrastructure/persistence/entities
 import RevokedAccessTokenTypeormEntity from "../../infrastructure/persistence/entities/revoked_access_token_typeorm.entity"
 import type { AccessClaims, RefreshClaims, TokenPair, TokenSubject } from "../../types/token.type"
 import type { JwksDocument } from "../../types/jwks.type"
+import type { MfaChallengeClaims } from "../../types/two_factor.type"
 
 @Injectable()
 class TokenService {
@@ -120,6 +121,34 @@ class TokenService {
     }
 
     return claims as unknown as AccessClaims
+  }
+
+  issueMfaChallenge(user: TokenSubject, principalId: string): { token: string; expiresIn: number } {
+    const now: number = Math.floor(Date.now() / 1000)
+    const ttl = 300
+    const token: string = jwt.sign(
+      {
+        sub: principalId,
+        jti: randomUUID(),
+        iss: this.issuer,
+        aud: this.audience,
+        iat: now,
+        exp: now + ttl,
+        token_use: "mfa_challenge",
+        uid: user.id
+      },
+      this.keys.privateKey,
+      { algorithm: "RS256", keyid: this.keys.kid }
+    )
+    return { token, expiresIn: ttl }
+  }
+
+  peekMfaChallenge(token: string): MfaChallengeClaims {
+    const claims = this.verifySignature(token)
+    if (claims.token_use !== "mfa_challenge") {
+      throw new UnauthorizedException("This is not a two-factor challenge")
+    }
+    return claims as unknown as MfaChallengeClaims
   }
 
   peekRefresh(token: string): RefreshClaims {

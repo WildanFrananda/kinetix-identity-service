@@ -4,9 +4,12 @@ import AuthUsecaseService from "../../application/services/auth_usecase.service"
 import LoginInputDto from "../../application/dto/login_input.dto"
 import RegisterUserInputDto from "../../application/dto/register_user_input.dto"
 import RefreshInputDto from "../../application/dto/refresh_input.dto"
+import TwoFactorCodeInputDto from "../../application/dto/two_factor_code_input.dto"
+import TwoFactorVerifyInputDto from "../../application/dto/two_factor_verify_input.dto"
 import AuthTokenOutputDto from "../../application/dto/auth_token_output.dto"
 import type { AccessClaims } from "../../types/token.type"
-import type { CurrentUserView, LogoutBody, TwoFactorSetup } from "../../types/auth.type"
+import type { CurrentUserView, LogoutBody } from "../../types/auth.type"
+import type { TwoFactorChallenge, TwoFactorSetup } from "../../types/two_factor.type"
 import { CurrentUser, Public } from "../decorators/auth.decorators"
 import SelfOrStaffGuard, { SelfParam } from "../guards/self_or_staff.guard"
 
@@ -19,8 +22,16 @@ class AuthController {
   @Post("login")
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
-  async login(@Body() dto: LoginInputDto): Promise<AuthTokenOutputDto> {
+  async login(@Body() dto: LoginInputDto): Promise<AuthTokenOutputDto | TwoFactorChallenge> {
     return await this.authUsecase.login(dto)
+  }
+
+  @Public()
+  @Post("2fa/verify")
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  async verifyTwoFactor(@Body() dto: TwoFactorVerifyInputDto): Promise<AuthTokenOutputDto> {
+    return await this.authUsecase.verifyTwoFactor(dto.challengeToken, dto.code)
   }
 
   @Public()
@@ -61,10 +72,32 @@ class AuthController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(SelfOrStaffGuard)
   @SelfParam("id")
-  async setupTwoFactor(
-    @Param("id", ParseIntPipe) userId: number
-  ): Promise<TwoFactorSetup> {
+  async setupTwoFactor(@Param("id", ParseIntPipe) userId: number): Promise<TwoFactorSetup> {
     return await this.authUsecase.setupTwoFactor(userId)
+  }
+
+  @Post("2fa/enable/:id")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(SelfOrStaffGuard)
+  @SelfParam("id")
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  async enableTwoFactor(
+    @Param("id", ParseIntPipe) userId: number,
+    @Body() dto: TwoFactorCodeInputDto
+  ): Promise<{ enabled: true }> {
+    return await this.authUsecase.enableTwoFactor(userId, dto.code)
+  }
+
+  @Post("2fa/disable/:id")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(SelfOrStaffGuard)
+  @SelfParam("id")
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  async disableTwoFactor(
+    @Param("id", ParseIntPipe) userId: number,
+    @Body() dto: TwoFactorCodeInputDto
+  ): Promise<{ enabled: false }> {
+    return await this.authUsecase.disableTwoFactor(userId, dto.code)
   }
 }
 
