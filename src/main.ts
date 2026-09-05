@@ -5,6 +5,11 @@ import { MicroserviceOptions, Transport } from "@nestjs/microservices"
 import { FastifyAdapter, NestFastifyApplication } from "@nestjs/platform-fastify"
 import { join } from "path"
 import AppModule from "./app.module"
+import { loadServiceIdentity, meshServerCredentials } from "./infrastructure/mesh/service_identity"
+import {
+  allowedCallers,
+  peerAuthorizationInterceptor
+} from "./infrastructure/mesh/peer_authorization_interceptor"
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -27,6 +32,9 @@ async function bootstrap() {
     throw new Error("GRPC_PORT must be set")
   }
 
+  const identity = loadServiceIdentity()
+  const allowed = allowedCallers()
+
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.GRPC,
     options: {
@@ -36,6 +44,10 @@ async function bootstrap() {
         keepCase: true
       },
       url: `0.0.0.0:${grpcPort}`,
+      credentials: meshServerCredentials(identity),
+      channelOptions: {
+        interceptors: [peerAuthorizationInterceptor(allowed)]
+      } as MicroserviceOptions["options"] extends { channelOptions?: infer C } ? C : never,
       onLoadPackageDefinition: (pkg, server) => {
         new ReflectionService(pkg).addToServer(server)
       }
