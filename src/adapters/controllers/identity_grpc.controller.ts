@@ -12,6 +12,8 @@ import type {
   GetPrincipalResponse,
   GetUserProfileRequest,
   GetUserProfileResponse,
+  MerchantStatus,
+  PrincipalKind,
   ResolvePrincipalRequest,
   ResolvePrincipalResponse,
   ValidateTokenRequest,
@@ -24,7 +26,41 @@ import ProfileEntity from "../../domain/entities/profile.entity"
 import UserEntity from "../../domain/entities/user.entity"
 import MerchantEntity from "../../domain/entities/merchant.entity"
 
+import { MERCHANT_ALIAS_SERVICE } from "../../application/services/seller_onboarding_usecase.service"
+
 const GRPC_TIMEOUT_MS = 5000
+
+const IDENTITY_ALIAS_SERVICE = "identity"
+
+const PRINCIPAL_KINDS: readonly PrincipalKind[] = [
+  "PRINCIPAL_KIND_UNSPECIFIED",
+  "PRINCIPAL_KIND_CUSTOMER",
+  "PRINCIPAL_KIND_MERCHANT",
+  "PRINCIPAL_KIND_DRIVER",
+  "PRINCIPAL_KIND_STAFF",
+  "PRINCIPAL_KIND_SERVICE"
+]
+
+function principalKindOf(value: string): PrincipalKind {
+  return (PRINCIPAL_KINDS as readonly string[]).includes(value)
+    ? (value as PrincipalKind)
+    : "PRINCIPAL_KIND_UNSPECIFIED"
+}
+
+function merchantStatusOf(status: string): MerchantStatus {
+  switch (status) {
+    case "pending":
+      return "MERCHANT_STATUS_PENDING"
+    case "verified":
+      return "MERCHANT_STATUS_VERIFIED"
+    case "suspended":
+      return "MERCHANT_STATUS_SUSPENDED"
+    case "closed":
+      return "MERCHANT_STATUS_CLOSED"
+    default:
+      return "MERCHANT_STATUS_UNSPECIFIED"
+  }
+}
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number = GRPC_TIMEOUT_MS): Promise<T> {
   return Promise.race([
@@ -74,7 +110,7 @@ class IdentityGrpcController {
     return {
       found: true,
       principal_id: alias.principal.id,
-      kind: alias.principal.kind,
+      kind: principalKindOf(alias.principal.kind),
       display_name: alias.principal.displayName ?? ""
     }
   }
@@ -98,7 +134,7 @@ class IdentityGrpcController {
     return {
       found: true,
       principal_id: principal.id,
-      kind: principal.kind,
+      kind: principalKindOf(principal.kind),
       display_name: principal.displayName ?? "",
       aliases: aliases.map((a) => ({ service: a.service, local_id: a.localId }))
     }
@@ -106,66 +142,101 @@ class IdentityGrpcController {
 
   @GrpcMethod("IdentityService", "GetUserProfile")
   async getUserProfile(data: GetUserProfileRequest): Promise<GetUserProfileResponse> {
-    const userId: number = Number(data.user_id)
+    const principalId: string = data.principalId ?? data.principal_id ?? ""
+    const empty: GetUserProfileResponse = {
+      found: false,
+      principal_id: "",
+      email: "",
+      full_name: "",
+      phone_number: "",
+      street_address: "",
+      city: "",
+      postal_code: "",
+      kind: "PRINCIPAL_KIND_UNSPECIFIED"
+    }
+
+    if (principalId === "") {
+      return empty
+    }
+
     try {
+      const alias = await withTimeout(
+        this.aliasRepository.findOne({
+          where: { principalId, service: IDENTITY_ALIAS_SERVICE },
+          relations: { principal: true }
+        })
+      )
+      if (!alias || !alias.principal) {
+        return empty
+      }
+
+      const userId = Number(alias.localId)
       const user: UserEntity | null = await withTimeout(this.userRepository.findById(userId))
-      const profile: ProfileEntity | null = await withTimeout(this.profileUsecase.getProfile(userId)).catch(() => null)
+      if (!user) {
+        return empty
+      }
+
+      const profile: ProfileEntity | null = await withTimeout(this.profileUsecase.getProfile(userId)).catch(
+        () => null
+      )
 
       return {
-        user_id: userId,
-        email: user ? user.email : "",
+        found: true,
+        principal_id: principalId,
+        email: user.email,
         full_name: profile ? profile.fullName : "",
         phone_number: profile ? profile.phoneNumber : "",
         street_address: profile ? profile.streetAddress : "",
         city: profile ? profile.city : "",
         postal_code: profile ? profile.postalCode : "",
-        role: user ? user.role : "customer"
+        kind: principalKindOf(alias.principal.kind)
       }
     } catch {
-      return {
-        user_id: userId,
-        email: "",
-        full_name: "",
-        phone_number: "",
-        street_address: "",
-        city: "",
-        postal_code: "",
-        role: "customer"
-      }
+      return empty
     }
   }
 
   @GrpcMethod("IdentityService", "GetMerchantInfo")
   async getMerchantInfo(data: GetMerchantInfoRequest): Promise<GetMerchantInfoResponse> {
-    const userId: number = Number(data.user_id)
-    try {
-      const merchant: MerchantEntity | null = await withTimeout(this.merchantRepository.findByUserId(userId))
+    const principalId: string = data.principalId ?? data.principal_id ?? ""
+    const empty: GetMerchantInfoResponse = {
+      found: false,
+      merchant_principal_id: "",
+      store_name: "",
+      business_registration_number: "",
+      tax_id: "",
+      status: "MERCHANT_STATUS_UNSPECIFIED"
+    }
 
+    if (principalId === "") {
+      return empty
+    }
+
+    try {
+      const alias = await withTimeout(
+        this.aliasRepository.findOne({ where: { principalId, service: MERCHANT_ALIAS_SERVICE } })
+      )
+      if (!alias) {
+        return empty
+      }
+
+      const merchant: MerchantEntity | null = await withTimeout(
+        this.merchantRepository.findById(Number(alias.localId))
+      )
       if (!merchant) {
-        return {
-          user_id: userId,
-          store_name: "",
-          business_registration_number: "",
-          tax_id: "",
-          status: "not_found"
-        }
+        return empty
       }
 
       return {
-        user_id: merchant.userId,
+        found: true,
+        merchant_principal_id: principalId,
         store_name: merchant.storeName,
         business_registration_number: merchant.businessRegistrationNumber,
         tax_id: merchant.taxId,
-        status: merchant.status
+        status: merchantStatusOf(merchant.status)
       }
     } catch {
-      return {
-        user_id: userId,
-        store_name: "",
-        business_registration_number: "",
-        tax_id: "",
-        status: "timeout"
-      }
+      return empty
     }
   }
 
@@ -188,7 +259,7 @@ class IdentityGrpcController {
       return { valid: false, principal_id: "", kind: "PRINCIPAL_KIND_UNSPECIFIED", reason: "unknown principal" }
     }
 
-    return { valid: true, principal_id: principal.id, kind: principal.kind, reason: "" }
+    return { valid: true, principal_id: principal.id, kind: principalKindOf(principal.kind), reason: "" }
   }
 }
 

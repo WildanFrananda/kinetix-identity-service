@@ -24,7 +24,9 @@ ENV GRPC_PORT=50052
 COPY package.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/proto ./proto
+# No `COPY proto`. The .proto travels inside kinetix-contracts, which is already in
+# node_modules above — copying one here again would be the vendored second copy this segment
+# exists to delete.
 
 EXPOSE 5000 50052
 

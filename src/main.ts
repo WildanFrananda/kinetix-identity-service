@@ -3,13 +3,18 @@ import { NestFactory } from "@nestjs/core"
 import { ReflectionService } from "@grpc/reflection"
 import { MicroserviceOptions, Transport } from "@nestjs/microservices"
 import { FastifyAdapter, NestFastifyApplication } from "@nestjs/platform-fastify"
-import { join } from "path"
+import { dirname, join } from "path"
 import AppModule from "./app.module"
 import { loadServiceIdentity, meshServerCredentials } from "./infrastructure/mesh/service_identity"
 import {
   allowedCallers,
   peerAuthorizationInterceptor
 } from "./infrastructure/mesh/peer_authorization_interceptor"
+
+function contractProto(relative: string): string {
+  const manifest = require.resolve("kinetix-contracts/package.json")
+  return join(dirname(manifest), "proto", relative)
+}
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -39,7 +44,11 @@ async function bootstrap() {
     transport: Transport.GRPC,
     options: {
       package: "identity.v1",
-      protoPath: join(process.cwd(), "proto/identity/v1/identity_service.proto"),
+      // From the package, never a copy in this repository. A vendored .proto is a second
+      // source of truth that drifts silently — six copies of common/v1 had already diverged
+      // before kinetix-contracts existed. `require.resolve` finds it wherever the package
+      // landed rather than assuming a node_modules layout.
+      protoPath: contractProto("identity/v1/identity.proto"),
       loader: {
         keepCase: true
       },

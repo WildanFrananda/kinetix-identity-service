@@ -12,6 +12,11 @@ class TypeormMerchantRepositoryAdapter implements MerchantRepositoryPort {
     private readonly repo: Repository<MerchantTypeormEntity>
   ) {}
 
+  async findById(id: number): Promise<MerchantEntity | null> {
+    const record = await this.repo.findOne({ where: { id } })
+    return record ? this.toEntity(record) : null
+  }
+
   async findByUserId(userId: number): Promise<MerchantEntity | null> {
     const record = await this.repo.findOne({ where: { userId } })
     if (!record) return null
@@ -67,6 +72,20 @@ class TypeormMerchantRepositoryAdapter implements MerchantRepositoryPort {
       saved.status,
       saved.description,
       saved.verifiedAt
+    )
+  }
+
+  private toEntity(record: MerchantTypeormEntity): MerchantEntity {
+    return new MerchantEntity(
+      record.id,
+      record.userId,
+      record.storeName,
+      record.slug,
+      record.businessRegistrationNumber,
+      record.taxId,
+      record.status,
+      record.description,
+      record.verifiedAt
     )
   }
 }
