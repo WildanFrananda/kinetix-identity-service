@@ -10,6 +10,8 @@ import {
   allowedCallers,
   peerAuthorizationInterceptor
 } from "./infrastructure/mesh/peer_authorization_interceptor"
+import { requestIdInterceptor } from "./infrastructure/observability/request_id_interceptor"
+import { requestIdMiddleware } from "./infrastructure/observability/request_id_middleware"
 
 function contractProto(relative: string): string {
   const manifest = require.resolve("kinetix-contracts/package.json")
@@ -29,6 +31,8 @@ async function bootstrap() {
       transform: true
     })
   )
+
+  app.use(requestIdMiddleware)
 
   app.enableCors()
 
@@ -51,7 +55,7 @@ async function bootstrap() {
       url: `0.0.0.0:${grpcPort}`,
       credentials: meshServerCredentials(identity),
       channelOptions: {
-        interceptors: [peerAuthorizationInterceptor(allowed)]
+        interceptors: [peerAuthorizationInterceptor(allowed), requestIdInterceptor()]
       } as MicroserviceOptions["options"] extends { channelOptions?: infer C } ? C : never,
       onLoadPackageDefinition: (pkg, server) => {
         new ReflectionService(pkg).addToServer(server)
