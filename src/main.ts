@@ -44,10 +44,6 @@ async function bootstrap() {
     transport: Transport.GRPC,
     options: {
       package: "identity.v1",
-      // From the package, never a copy in this repository. A vendored .proto is a second
-      // source of truth that drifts silently — six copies of common/v1 had already diverged
-      // before kinetix-contracts existed. `require.resolve` finds it wherever the package
-      // landed rather than assuming a node_modules layout.
       protoPath: contractProto("identity/v1/identity.proto"),
       loader: {
         keepCase: true
