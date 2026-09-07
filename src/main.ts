@@ -10,6 +10,7 @@ import {
   allowedCallers,
   peerAuthorizationInterceptor
 } from "./infrastructure/mesh/peer_authorization_interceptor"
+import { logLevelsFrom } from "./infrastructure/observability/log_levels"
 import { requestIdInterceptor } from "./infrastructure/observability/request_id_interceptor"
 import { requestIdMiddleware } from "./infrastructure/observability/request_id_middleware"
 import { UnhandledExceptionFilter } from "./infrastructure/observability/unhandled_exception_filter"
@@ -22,7 +23,8 @@ function contractProto(relative: string): string {
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter()
+    new FastifyAdapter(),
+    { logger: logLevelsFrom(process.env.LOG_LEVEL) }
   )
 
   app.useGlobalPipes(
