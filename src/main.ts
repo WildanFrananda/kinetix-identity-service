@@ -1,4 +1,4 @@
-import { ValidationPipe } from "@nestjs/common"
+import { Logger, ValidationPipe } from "@nestjs/common"
 import { NestFactory } from "@nestjs/core"
 import { ReflectionService } from "@grpc/reflection"
 import { MicroserviceOptions, Transport } from "@nestjs/microservices"
@@ -12,6 +12,7 @@ import {
 } from "./infrastructure/mesh/peer_authorization_interceptor"
 import { requestIdInterceptor } from "./infrastructure/observability/request_id_interceptor"
 import { requestIdMiddleware } from "./infrastructure/observability/request_id_middleware"
+import { UnhandledExceptionFilter } from "./infrastructure/observability/unhandled_exception_filter"
 
 function contractProto(relative: string): string {
   const manifest = require.resolve("kinetix-contracts/package.json")
@@ -33,6 +34,7 @@ async function bootstrap() {
   )
 
   app.use(requestIdMiddleware)
+  app.useGlobalFilters(new UnhandledExceptionFilter())
 
   app.enableCors()
 
@@ -67,7 +69,9 @@ async function bootstrap() {
 
   const port = Number(process.env.PORT) || 5000
   await app.listen(port, "0.0.0.0")
-  console.log(`⚡ Kinetix Identity Service HTTP (Fastify :${port}) & gRPC Server (:${grpcPort}) active`)
+  new Logger("Bootstrap").log(
+    `Kinetix identity is up. HTTP (Fastify) on :${port}, gRPC on :${grpcPort}`
+  )
 }
 
 bootstrap()
