@@ -12,13 +12,14 @@ import type {
   GetPrincipalResponse,
   GetUserProfileRequest,
   GetUserProfileResponse,
-  MerchantStatus,
-  PrincipalKind,
   ResolvePrincipalRequest,
   ResolvePrincipalResponse,
   ValidateTokenRequest,
   ValidateTokenResponse
 } from "../../types/identity_grpc.type"
+import { principalKindOf } from "../mappers/principal_kind.mapper"
+import { merchantStatusOf } from "../mappers/merchant_status.mapper"
+import { withTimeout } from "../../infrastructure/persistence/with_timeout"
 import UserProfileUsecaseService from "../../application/services/user_profile_usecase.service"
 import UserRepositoryPort from "../../domain/ports/user_repository.port"
 import MerchantRepositoryPort from "../../domain/ports/merchant_repository.port"
@@ -28,48 +29,7 @@ import MerchantEntity from "../../domain/entities/merchant.entity"
 
 import { MERCHANT_ALIAS_SERVICE } from "../../application/services/seller_onboarding_usecase.service"
 
-const GRPC_TIMEOUT_MS = 5000
-
 const IDENTITY_ALIAS_SERVICE = "identity"
-
-const PRINCIPAL_KINDS: readonly PrincipalKind[] = [
-  "PRINCIPAL_KIND_UNSPECIFIED",
-  "PRINCIPAL_KIND_CUSTOMER",
-  "PRINCIPAL_KIND_MERCHANT",
-  "PRINCIPAL_KIND_DRIVER",
-  "PRINCIPAL_KIND_STAFF",
-  "PRINCIPAL_KIND_SERVICE"
-]
-
-function principalKindOf(value: string): PrincipalKind {
-  return (PRINCIPAL_KINDS as readonly string[]).includes(value)
-    ? (value as PrincipalKind)
-    : "PRINCIPAL_KIND_UNSPECIFIED"
-}
-
-function merchantStatusOf(status: string): MerchantStatus {
-  switch (status) {
-    case "pending":
-      return "MERCHANT_STATUS_PENDING"
-    case "verified":
-      return "MERCHANT_STATUS_VERIFIED"
-    case "suspended":
-      return "MERCHANT_STATUS_SUSPENDED"
-    case "closed":
-      return "MERCHANT_STATUS_CLOSED"
-    default:
-      return "MERCHANT_STATUS_UNSPECIFIED"
-  }
-}
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number = GRPC_TIMEOUT_MS): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`gRPC database execution timed out after ${timeoutMs}ms`)), timeoutMs)
-    )
-  ])
-}
 
 @Controller()
 class IdentityGrpcController {
