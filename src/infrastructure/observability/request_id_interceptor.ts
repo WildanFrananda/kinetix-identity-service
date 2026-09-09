@@ -22,7 +22,11 @@ function requestIdInterceptor(): ServerInterceptor {
       start: (next) => {
         next({
           onReceiveMetadata: (metadata, forward) => {
-            logger.log(`gRPC ${method} (request_id=${requestIdOf(metadata)})`)
+            logger.log({
+              message: `gRPC ${method}`,
+              requestId: requestIdOf(metadata),
+              fields: { grpc_method: method }
+            })
             forward(metadata)
           }
         })
@@ -31,9 +35,9 @@ function requestIdInterceptor(): ServerInterceptor {
   }
 }
 
-function requestIdOf(metadata: Metadata): string {
+function requestIdOf(metadata: Metadata): string | null {
   const value = metadata.get(REQUEST_ID_KEY)[0]
-  return typeof value === "string" && value.length > 0 ? value : "-"
+  return typeof value === "string" && value.length > 0 ? value : null
 }
 
 export { requestIdInterceptor, REQUEST_ID_KEY }

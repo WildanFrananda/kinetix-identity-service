@@ -4,6 +4,8 @@ import type { FastifyReply, FastifyRequest } from "fastify"
 import type { ErrorResponse } from "../../types/error_response.type"
 import { REQUEST_ID_HEADER } from "./request_id_middleware"
 
+const NO_REQUEST_ID = "-"
+
 const logger = new Logger("UnhandledException")
 
 @Catch()
@@ -12,15 +14,18 @@ class UnhandledExceptionFilter implements ExceptionFilter {
     const context = host.switchToHttp()
     const request = context.getRequest<FastifyRequest>()
     const reply = context.getResponse<FastifyReply>()
-    const traceId = requestIdOf(request)
+    const requestId = requestIdOf(request)
+    const traceId = requestId ?? NO_REQUEST_ID
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus()
       const body = exception.getResponse()
 
-      logger.warn(
-        `${request.method} ${request.url} refused with ${status} (request_id=${traceId})`
-      )
+      logger.warn({
+        message: `${request.method} ${request.url} refused with ${status}`,
+        requestId,
+        fields: { method: request.method, path: request.url, status }
+      })
 
       reply.status(status).send(
         typeof body === "object" && body !== null
@@ -31,7 +36,11 @@ class UnhandledExceptionFilter implements ExceptionFilter {
     }
 
     logger.error(
-      `unhandled exception serving ${request.method} ${request.url} (request_id=${traceId})`,
+      {
+        message: `unhandled exception serving ${request.method} ${request.url}`,
+        requestId,
+        fields: { method: request.method, path: request.url }
+      },
       exception instanceof Error ? exception.stack : String(exception)
     )
 
@@ -47,10 +56,10 @@ class UnhandledExceptionFilter implements ExceptionFilter {
   }
 }
 
-function requestIdOf(request: FastifyRequest): string {
+function requestIdOf(request: FastifyRequest): string | null {
   const header = request.headers[REQUEST_ID_HEADER]
   const value = Array.isArray(header) ? header[0] : header
-  return value !== undefined && value.length > 0 ? value : "-"
+  return value !== undefined && value.length > 0 ? value : null
 }
 
 export { UnhandledExceptionFilter }

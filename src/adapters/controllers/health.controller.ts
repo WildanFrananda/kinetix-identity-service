@@ -1,4 +1,11 @@
-import { Controller, Get, HttpCode, HttpStatus, ServiceUnavailableException } from "@nestjs/common"
+import {
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Logger,
+  ServiceUnavailableException
+} from "@nestjs/common"
 import { InjectDataSource } from "@nestjs/typeorm"
 import { DataSource } from "typeorm"
 import { Public } from "../decorators/auth.decorators"
@@ -7,6 +14,8 @@ import type { LivenessReport, ReadinessReport } from "../../types/health.type"
 @Controller("health")
 @Public()
 class HealthController {
+  private readonly logger = new Logger(HealthController.name)
+
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
   @Get()
@@ -20,10 +29,10 @@ class HealthController {
     try {
       await this.dataSource.query("SELECT 1")
     } catch (error: unknown) {
-      console.error(
-        "readiness check failed:",
-        error instanceof Error ? error.message : error
-      )
+      this.logger.error({
+        message: "readiness check failed",
+        fields: { reason: error instanceof Error ? error.message : String(error) }
+      })
       throw new ServiceUnavailableException({ status: "unavailable", database: "unreachable" })
     }
 

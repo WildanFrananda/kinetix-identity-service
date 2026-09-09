@@ -23,6 +23,7 @@ import HealthController from "./adapters/controllers/health.controller"
 import UserProfileController from "./adapters/controllers/user_profile.controller"
 import SellerOnboardingController from "./adapters/controllers/seller_onboarding.controller"
 import IdentityGrpcController from "./adapters/controllers/identity_grpc.controller"
+import MetricsController from "./adapters/controllers/metrics.controller"
 import PrincipalAliasTypeormEntity from "./infrastructure/persistence/entities/principal_alias_typeorm.entity"
 import PrincipalTypeormEntity from "./infrastructure/persistence/entities/principal_typeorm.entity"
 import RefreshTokenTypeormEntity from "./infrastructure/persistence/entities/refresh_token_typeorm.entity"
@@ -87,6 +88,7 @@ import JwksController from "./adapters/controllers/jwks.controller"
   ],
   controllers: [
     HealthController,
+    MetricsController,
     JwksController,
     AuthController,
     UserProfileController,

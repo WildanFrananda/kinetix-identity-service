@@ -17,7 +17,11 @@ function requestIdMiddleware(
     response.setHeader("X-Request-Id", requestId)
   }
 
-  logger.log(`${request.method} ${request.url} (request_id=${requestId ?? "-"})`)
+  logger.log({
+    message: `${request.method} ${request.url}`,
+    requestId,
+    fields: { method: request.method ?? "", path: request.url ?? "" }
+  })
 
   next()
 }
