@@ -50,6 +50,16 @@ class PrincipalResolverService {
     }
   }
 
+  async userIdForPrincipal(principalId: string): Promise<number | null> {
+    const alias = await this.aliasRepository.findOne({ where: { service: "identity", principalId } })
+    if (!alias) {
+      return null
+    }
+
+    const userId = Number(alias.localId)
+    return Number.isInteger(userId) ? userId : null
+  }
+
   async registerAlias(principalId: string, service: string, localId: string): Promise<void> {
     const existing = await this.aliasRepository.findOne({ where: { service, localId } })
     if (existing) {
