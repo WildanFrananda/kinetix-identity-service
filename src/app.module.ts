@@ -17,11 +17,13 @@ import TypeormMerchantRepositoryAdapter from "./infrastructure/persistence/adapt
 import AuthUsecaseService from "./application/services/auth_usecase.service"
 import UserProfileUsecaseService from "./application/services/user_profile_usecase.service"
 import SellerOnboardingUsecaseService from "./application/services/seller_onboarding_usecase.service"
+import CourierOnboardingUsecaseService from "./application/services/courier_onboarding_usecase.service"
 
 import AuthController from "./adapters/controllers/auth.controller"
 import HealthController from "./adapters/controllers/health.controller"
 import UserProfileController from "./adapters/controllers/user_profile.controller"
 import SellerOnboardingController from "./adapters/controllers/seller_onboarding.controller"
+import CourierOnboardingController from "./adapters/controllers/courier_onboarding.controller"
 import IdentityGrpcController from "./adapters/controllers/identity_grpc.controller"
 import MetricsController from "./adapters/controllers/metrics.controller"
 import PrincipalAliasTypeormEntity from "./infrastructure/persistence/entities/principal_alias_typeorm.entity"
@@ -93,6 +95,7 @@ import JwksController from "./adapters/controllers/jwks.controller"
     AuthController,
     UserProfileController,
     SellerOnboardingController,
+    CourierOnboardingController,
     IdentityGrpcController
   ],
   providers: [
@@ -108,6 +111,7 @@ import JwksController from "./adapters/controllers/jwks.controller"
     AuthUsecaseService,
     UserProfileUsecaseService,
     SellerOnboardingUsecaseService,
+    CourierOnboardingUsecaseService,
     {
       provide: "UserRepositoryPort",
       useClass: TypeormUserRepositoryAdapter
