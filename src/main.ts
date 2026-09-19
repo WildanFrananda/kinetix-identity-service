@@ -17,6 +17,7 @@ import { grpcMetricsInterceptor } from "./infrastructure/observability/grpc_metr
 import { grpcMethodPathsOf } from "./infrastructure/observability/grpc_method_paths"
 import { installHttpMetrics } from "./infrastructure/observability/http_metrics"
 import { JsonLogger } from "./infrastructure/observability/json_logger"
+import { contractProto } from "./infrastructure/mesh/contract_proto"
 import { logLevelsFrom } from "./infrastructure/observability/log_levels"
 import { declareGrpcMethod } from "./infrastructure/observability/metrics_registry"
 import { requestIdInterceptor } from "./infrastructure/observability/request_id_interceptor"
@@ -26,11 +27,6 @@ import {
   installShutdownDrain
 } from "./infrastructure/observability/shutdown_drain"
 import { UnhandledExceptionFilter } from "./infrastructure/observability/unhandled_exception_filter"
-
-function contractProto(relative: string): string {
-  const manifest = require.resolve("kinetix-contracts/package.json")
-  return join(dirname(manifest), "proto", relative)
-}
 
 async function bootstrap() {
   const graceSeconds = graceSecondsFrom(process.env.SHUTDOWN_GRACE_SECONDS)

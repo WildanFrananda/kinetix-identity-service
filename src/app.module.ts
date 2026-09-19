@@ -18,6 +18,8 @@ import AuthUsecaseService from "./application/services/auth_usecase.service"
 import UserProfileUsecaseService from "./application/services/user_profile_usecase.service"
 import SellerOnboardingUsecaseService from "./application/services/seller_onboarding_usecase.service"
 import CourierOnboardingUsecaseService from "./application/services/courier_onboarding_usecase.service"
+import CourierRegistrationUsecaseService from "./application/services/courier_registration_usecase.service"
+import FleetRegistryGrpcAdapter from "./infrastructure/mesh/fleet_registry_grpc.adapter"
 
 import AuthController from "./adapters/controllers/auth.controller"
 import HealthController from "./adapters/controllers/health.controller"
@@ -112,6 +114,7 @@ import JwksController from "./adapters/controllers/jwks.controller"
     UserProfileUsecaseService,
     SellerOnboardingUsecaseService,
     CourierOnboardingUsecaseService,
+    CourierRegistrationUsecaseService,
     {
       provide: "UserRepositoryPort",
       useClass: TypeormUserRepositoryAdapter
@@ -127,6 +130,10 @@ import JwksController from "./adapters/controllers/jwks.controller"
     {
       provide: "MerchantRepositoryPort",
       useClass: TypeormMerchantRepositoryAdapter
+    },
+    {
+      provide: "FleetRegistryPort",
+      useClass: FleetRegistryGrpcAdapter
     }
   ]
 })
