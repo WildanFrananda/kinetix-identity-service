@@ -1,6 +1,6 @@
 import { readFileSync } from "fs"
 import { join } from "path"
-import { ServerCredentials } from "@grpc/grpc-js"
+import { ChannelCredentials, ServerCredentials } from "@grpc/grpc-js"
 import type { ServiceIdentityFiles } from "../../types/mesh.type"
 
 const DEFAULT_PKI_DIR = "/pki"
@@ -30,4 +30,8 @@ function meshServerCredentials(files: ServiceIdentityFiles): ServerCredentials {
   )
 }
 
-export { loadServiceIdentity, meshServerCredentials }
+function meshClientCredentials(files: ServiceIdentityFiles): ChannelCredentials {
+  return ChannelCredentials.createSsl(files.ca, files.key, files.cert)
+}
+
+export { loadServiceIdentity, meshClientCredentials, meshServerCredentials }
