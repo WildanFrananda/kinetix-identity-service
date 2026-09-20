@@ -7,6 +7,9 @@ class ProfileEntity {
   city: string
   postalCode: string
   avatarUrl?: string
+  latitude?: number
+  longitude?: number
+  geocodedAt?: Date
 
   constructor(
     id: number,
@@ -16,7 +19,10 @@ class ProfileEntity {
     streetAddress: string,
     city: string,
     postalCode: string,
-    avatarUrl?: string
+    avatarUrl?: string,
+    latitude?: number,
+    longitude?: number,
+    geocodedAt?: Date
   ) {
     this.id = id
     this.userId = userId
@@ -26,6 +32,9 @@ class ProfileEntity {
     this.city = city
     this.postalCode = postalCode
     this.avatarUrl = avatarUrl
+    this.latitude = latitude
+    this.longitude = longitude
+    this.geocodedAt = geocodedAt
   }
 }
 

@@ -8,6 +8,12 @@ class MerchantEntity {
   taxId: string
   status: "pending" | "verified" | "active" | "suspended"
   verifiedAt?: Date
+  streetAddress: string
+  city: string
+  postalCode: string
+  latitude?: number
+  longitude?: number
+  geocodedAt?: Date
 
   constructor(
     id: number,
@@ -18,7 +24,13 @@ class MerchantEntity {
     taxId: string,
     status: "pending" | "verified" | "active" | "suspended" = "pending",
     description?: string,
-    verifiedAt?: Date
+    verifiedAt?: Date,
+    streetAddress = "",
+    city = "",
+    postalCode = "",
+    latitude?: number,
+    longitude?: number,
+    geocodedAt?: Date
   ) {
     this.id = id
     this.userId = userId
@@ -29,6 +41,12 @@ class MerchantEntity {
     this.status = status
     this.description = description
     this.verifiedAt = verifiedAt
+    this.streetAddress = streetAddress
+    this.city = city
+    this.postalCode = postalCode
+    this.latitude = latitude
+    this.longitude = longitude
+    this.geocodedAt = geocodedAt
   }
 }
 

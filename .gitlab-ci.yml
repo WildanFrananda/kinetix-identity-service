@@ -43,17 +43,16 @@ typecheck:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 unit:
-  # Node, not Bun. jest 30's environment walks the global object and reads
-  # `ReadableStreamDefaultReader.closed` off the prototype, which throws under Bun:
-  # "TypeError: The 'closed' getter can only be used on a ReadableStreamDefaultReader".
-  # The same suite passes 5/5 under Node. The service still runs on Bun; only the test runner
-  # needs a different host.
-  image: node:22-alpine
+  # Bun, like every other job. This ran on Node until 2026-09-21 because jest 30 threw under Bun
+  # reading `ReadableStreamDefaultReader.closed` off the prototype; that is fixed upstream, and
+  # keeping Node here meant carrying a second lockfile that could disagree with bun.lock — and on
+  # 2026-09-20 it did. (see .github/workflows/ci.yml for the full note)
+  image: oven/bun:1-alpine
   stage: test
   before_script:
-    - npm ci
+    - bun install --frozen-lockfile
   script:
-    - npx jest --config jest.config.cjs
+    - bunx jest --config jest.config.cjs
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

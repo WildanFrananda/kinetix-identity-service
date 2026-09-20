@@ -22,7 +22,10 @@ class TypeormMerchantVerificationRepositoryAdapter implements MerchantVerificati
       record.businessRegistrationNumber,
       record.taxId,
       record.status,
-      record.verifiedAt
+      record.verifiedAt,
+      record.streetAddress,
+      record.city,
+      record.postalCode
     )
   }
 
@@ -34,7 +37,10 @@ class TypeormMerchantVerificationRepositoryAdapter implements MerchantVerificati
       businessRegistrationNumber: merchantVerification.businessRegistrationNumber,
       taxId: merchantVerification.taxId,
       status: merchantVerification.status,
-      verifiedAt: merchantVerification.verifiedAt
+      verifiedAt: merchantVerification.verifiedAt,
+      streetAddress: merchantVerification.streetAddress,
+      city: merchantVerification.city,
+      postalCode: merchantVerification.postalCode
     })
     const saved = await this.repo.save(entity)
     return new MerchantVerificationEntity(
@@ -44,7 +50,10 @@ class TypeormMerchantVerificationRepositoryAdapter implements MerchantVerificati
       saved.businessRegistrationNumber,
       saved.taxId,
       saved.status,
-      saved.verifiedAt
+      saved.verifiedAt,
+      saved.streetAddress,
+      saved.city,
+      saved.postalCode
     )
   }
 }

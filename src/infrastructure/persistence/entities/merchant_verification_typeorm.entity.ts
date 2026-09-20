@@ -23,6 +23,15 @@ class MerchantVerificationTypeormEntity {
   @Column()
   taxId!: string
 
+  @Column({ default: "" })
+  streetAddress!: string
+
+  @Column({ default: "" })
+  city!: string
+
+  @Column({ default: "" })
+  postalCode!: string
+
   @Column({ default: "pending" })
   status!: "pending" | "verified" | "rejected"
 

@@ -23,7 +23,10 @@ class TypeormProfileRepositoryAdapter implements ProfileRepositoryPort {
       record.streetAddress,
       record.city,
       record.postalCode,
-      record.avatarUrl
+      record.avatarUrl,
+      record.latitude === null || record.latitude === undefined ? undefined : Number(record.latitude),
+      record.longitude === null || record.longitude === undefined ? undefined : Number(record.longitude),
+      record.geocodedAt
     )
   }
 
@@ -36,7 +39,10 @@ class TypeormProfileRepositoryAdapter implements ProfileRepositoryPort {
       streetAddress: profile.streetAddress,
       city: profile.city,
       postalCode: profile.postalCode,
-      avatarUrl: profile.avatarUrl
+      avatarUrl: profile.avatarUrl,
+      latitude: profile.latitude,
+      longitude: profile.longitude,
+      geocodedAt: profile.geocodedAt
     })
     const saved = await this.repo.save(entity)
     return new ProfileEntity(
@@ -47,7 +53,10 @@ class TypeormProfileRepositoryAdapter implements ProfileRepositoryPort {
       saved.streetAddress,
       saved.city,
       saved.postalCode,
-      saved.avatarUrl
+      saved.avatarUrl,
+      saved.latitude === null || saved.latitude === undefined ? undefined : Number(saved.latitude),
+      saved.longitude === null || saved.longitude === undefined ? undefined : Number(saved.longitude),
+      saved.geocodedAt
     )
   }
 }

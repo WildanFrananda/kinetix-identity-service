@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common"
+import { ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common"
 import MerchantVerificationEntity from "../../domain/entities/merchant_verification.entity"
 import MerchantEntity from "../../domain/entities/merchant.entity"
 import UserEntity from "../../domain/entities/user.entity"
@@ -6,12 +6,15 @@ import MerchantVerificationRepositoryPort from "../../domain/ports/merchant_veri
 import MerchantRepositoryPort from "../../domain/ports/merchant_repository.port"
 import UserRepositoryPort from "../../domain/ports/user_repository.port"
 import OnboardSellerInputDto from "../dto/onboard_seller_input.dto"
+import GeocodingUsecaseService from "./geocoding_usecase.service"
 import PrincipalResolverService from "./principal_resolver.service"
 
 const MERCHANT_ALIAS_SERVICE = "identity-merchant"
 
 @Injectable()
 class SellerOnboardingUsecaseService {
+  private readonly logger = new Logger(SellerOnboardingUsecaseService.name)
+
   constructor(
     @Inject("MerchantVerificationRepositoryPort")
     private readonly verificationRepository: MerchantVerificationRepositoryPort,
@@ -19,7 +22,8 @@ class SellerOnboardingUsecaseService {
     private readonly merchantRepository: MerchantRepositoryPort,
     @Inject("UserRepositoryPort")
     private readonly userRepository: UserRepositoryPort,
-    private readonly principalResolver: PrincipalResolverService
+    private readonly principalResolver: PrincipalResolverService,
+    private readonly geocoding: GeocodingUsecaseService
   ) {}
 
   async onboardSeller(userId: number, dto: OnboardSellerInputDto): Promise<MerchantVerificationEntity> {
@@ -37,6 +41,9 @@ class SellerOnboardingUsecaseService {
       existing.storeName = dto.storeName
       existing.businessRegistrationNumber = dto.businessRegistrationNumber
       existing.taxId = dto.taxId
+      existing.streetAddress = dto.streetAddress
+      existing.city = dto.city
+      existing.postalCode = dto.postalCode
       existing.status = "pending"
       return await this.verificationRepository.save(existing)
     }
@@ -47,10 +54,48 @@ class SellerOnboardingUsecaseService {
       dto.storeName,
       dto.businessRegistrationNumber,
       dto.taxId,
-      "pending"
+      "pending",
+      undefined,
+      dto.streetAddress,
+      dto.city,
+      dto.postalCode
     )
 
     return await this.verificationRepository.save(verification)
+  }
+
+  private async placeOnMap(merchant: MerchantEntity): Promise<void> {
+    merchant.latitude = undefined
+    merchant.longitude = undefined
+    merchant.geocodedAt = new Date()
+
+    if (merchant.streetAddress.trim().length === 0) {
+      return
+    }
+
+    try {
+      const outcome = await this.geocoding.geocode({
+        streetAddress: merchant.streetAddress,
+        city: merchant.city,
+        postalCode: merchant.postalCode
+      })
+
+      if (outcome.geocoded) {
+        merchant.latitude = outcome.location.latitude
+        merchant.longitude = outcome.location.longitude
+        return
+      }
+
+      this.logger.warn(
+        `merchant ${merchant.userId}: the store address was approved but not placed ` +
+          `(${outcome.failure}). No courier can be dispatched to it until it is geocoded.`
+      )
+    } catch (error) {
+      this.logger.error(
+        `merchant ${merchant.userId}: the store address was approved but the geocoder could not ` +
+          `be asked: ${error instanceof Error ? error.message : String(error)}`
+      )
+    }
   }
 
   async approveVerification(userId: number): Promise<MerchantEntity> {
@@ -77,12 +122,21 @@ class SellerOnboardingUsecaseService {
         verification.taxId,
         "verified",
         "Official Merchant Store",
-        verifiedAt
+        verifiedAt,
+        verification.streetAddress,
+        verification.city,
+        verification.postalCode
       )
     } else {
       merchant.status = "verified"
       merchant.verifiedAt = verifiedAt
+      merchant.streetAddress = verification.streetAddress
+      merchant.city = verification.city
+      merchant.postalCode = verification.postalCode
     }
+
+    await this.placeOnMap(merchant)
+
     merchant = await this.merchantRepository.save(merchant)
 
     if (user.role !== "seller") {

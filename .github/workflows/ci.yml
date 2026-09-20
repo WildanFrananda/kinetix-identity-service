@@ -25,20 +25,23 @@ jobs:
       - run: bun run build
 
   unit:
-    # Node, not Bun. jest 30's environment walks the global object and reads
-    # `ReadableStreamDefaultReader.closed` off the prototype, which throws under Bun:
-    # "TypeError: The 'closed' getter can only be used on a ReadableStreamDefaultReader".
-    # The same suite passes 5/5 under Node. The service still runs on Bun; only the test
-    # runner needs a different host.
+    # Bun, like every other job. This ran on Node until 2026-09-21 for a real reason: jest 30's
+    # environment walked the global object and read `ReadableStreamDefaultReader.closed` off the
+    # prototype, which threw under Bun. That is fixed upstream — the whole suite passes under
+    # bun 1.3.14 — and keeping Node here meant a second lockfile.
+    #
+    # Two lockfiles is two answers to "which version is installed". They agreed until they did not:
+    # on 2026-09-20 bun.lock held kinetix-contracts@1.0.13 and package-lock.json held 1.0.10, so the
+    # build compiled against one contract and the tests would have run against another. `npm ci`
+    # refusing to install is the only reason that was caught.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci
-      - run: npx jest --config jest.config.cjs
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bunx jest --config jest.config.cjs
 
   migrations:
     runs-on: ubuntu-latest

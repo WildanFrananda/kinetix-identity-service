@@ -112,7 +112,9 @@ class IdentityGrpcController {
       street_address: "",
       city: "",
       postal_code: "",
-      kind: "PRINCIPAL_KIND_UNSPECIFIED"
+      kind: "PRINCIPAL_KIND_UNSPECIFIED",
+      has_location: false,
+      location: { latitude: 0, longitude: 0 }
     }
 
     if (principalId === "") {
@@ -140,6 +142,11 @@ class IdentityGrpcController {
         () => null
       )
 
+      const placed =
+        profile !== null &&
+        typeof profile.latitude === "number" &&
+        typeof profile.longitude === "number"
+
       return {
         found: true,
         principal_id: principalId,
@@ -149,7 +156,12 @@ class IdentityGrpcController {
         street_address: profile ? profile.streetAddress : "",
         city: profile ? profile.city : "",
         postal_code: profile ? profile.postalCode : "",
-        kind: principalKindOf(alias.principal.kind)
+        kind: principalKindOf(alias.principal.kind),
+        has_location: placed,
+        location: {
+          latitude: placed ? (profile?.latitude as number) : 0,
+          longitude: placed ? (profile?.longitude as number) : 0
+        }
       }
     } catch {
       return empty
@@ -165,7 +177,10 @@ class IdentityGrpcController {
       store_name: "",
       business_registration_number: "",
       tax_id: "",
-      status: "MERCHANT_STATUS_UNSPECIFIED"
+      status: "MERCHANT_STATUS_UNSPECIFIED",
+      pickup_address: { street_address: "", city: "", postal_code: "" },
+      has_location: false,
+      location: { latitude: 0, longitude: 0 }
     }
 
     if (principalId === "") {
@@ -187,13 +202,26 @@ class IdentityGrpcController {
         return empty
       }
 
+      const placed =
+        typeof merchant.latitude === "number" && typeof merchant.longitude === "number"
+
       return {
         found: true,
         merchant_principal_id: principalId,
         store_name: merchant.storeName,
         business_registration_number: merchant.businessRegistrationNumber,
         tax_id: merchant.taxId,
-        status: merchantStatusOf(merchant.status)
+        status: merchantStatusOf(merchant.status),
+        pickup_address: {
+          street_address: merchant.streetAddress,
+          city: merchant.city,
+          postal_code: merchant.postalCode
+        },
+        has_location: placed,
+        location: {
+          latitude: placed ? (merchant.latitude as number) : 0,
+          longitude: placed ? (merchant.longitude as number) : 0
+        }
       }
     } catch {
       return empty

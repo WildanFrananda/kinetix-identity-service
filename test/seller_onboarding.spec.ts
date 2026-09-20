@@ -9,6 +9,7 @@ describe("SellerOnboardingUsecaseService Unit Tests", () => {
   let mockMerchantRepo: any
   let mockUserRepo: any
   let mockPrincipalResolver: any
+  let mockGeocoding: any
   let user: UserEntity
 
   beforeEach(() => {
@@ -27,11 +28,21 @@ describe("SellerOnboardingUsecaseService Unit Tests", () => {
       registerAlias: jest.fn().mockResolvedValue(undefined)
     }
 
+    mockGeocoding = {
+      geocode: jest.fn().mockResolvedValue({
+        geocoded: true,
+        location: { latitude: -6.1754, longitude: 106.8272 },
+        precision: "ROOFTOP"
+      }),
+      forget: jest.fn().mockResolvedValue(undefined)
+    }
+
     service = new SellerOnboardingUsecaseService(
       mockVerificationRepo,
       mockMerchantRepo,
       mockUserRepo,
-      mockPrincipalResolver
+      mockPrincipalResolver,
+      mockGeocoding
     )
   })
 
@@ -46,7 +57,10 @@ describe("SellerOnboardingUsecaseService Unit Tests", () => {
     const res = await service.onboardSeller(1, {
       storeName: "Kinetix Store",
       businessRegistrationNumber: "REG-100",
-      taxId: "TAX-200"
+      taxId: "TAX-200",
+      streetAddress: "Jl. Cikini Raya No. 99",
+      city: "Jakarta",
+      postalCode: "10330"
     })
 
     expect(res.status).toBe("pending")
@@ -59,7 +73,14 @@ describe("SellerOnboardingUsecaseService Unit Tests", () => {
     mockVerificationRepo.findByUserId.mockResolvedValue(verified)
 
     await expect(
-      service.onboardSeller(1, { storeName: "Different Name", businessRegistrationNumber: "REG-999", taxId: "TAX-999" })
+      service.onboardSeller(1, {
+        storeName: "Different Name",
+        businessRegistrationNumber: "REG-999",
+        taxId: "TAX-999",
+        streetAddress: "Jl. Malioboro No. 88",
+        city: "Yogyakarta",
+        postalCode: "55271"
+      })
     ).rejects.toThrow("already a verified merchant")
     expect(mockVerificationRepo.save).not.toHaveBeenCalled()
   })

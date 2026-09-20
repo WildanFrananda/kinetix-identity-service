@@ -9,3 +9,9 @@ coverage/
 *.log
 .idea/
 .vscode/
+
+# One lockfile. This project installs with bun, and every CI job does too. package-lock.json used to
+# sit beside bun.lock because the unit tests ran on Node; on 2026-09-20 the two disagreed about
+# kinetix-contracts and the build compiled against a different contract than the tests would have
+# used. Anyone running `npm install` here regenerates it, so it is ignored rather than merely deleted.
+package-lock.json
