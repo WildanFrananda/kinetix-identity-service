@@ -6,6 +6,9 @@ class MerchantVerificationEntity {
   taxId: string
   status: "pending" | "verified" | "rejected"
   verifiedAt?: Date
+  streetAddress: string
+  city: string
+  postalCode: string
 
   constructor(
     id: number,
@@ -14,7 +17,10 @@ class MerchantVerificationEntity {
     businessRegistrationNumber: string,
     taxId: string,
     status: "pending" | "verified" | "rejected" = "pending",
-    verifiedAt?: Date
+    verifiedAt?: Date,
+    streetAddress = "",
+    city = "",
+    postalCode = ""
   ) {
     this.id = id
     this.userId = userId
@@ -23,6 +29,9 @@ class MerchantVerificationEntity {
     this.taxId = taxId
     this.status = status
     this.verifiedAt = verifiedAt
+    this.streetAddress = streetAddress
+    this.city = city
+    this.postalCode = postalCode
   }
 }
 

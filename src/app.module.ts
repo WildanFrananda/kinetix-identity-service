@@ -7,6 +7,7 @@ import { ThrottlerModule } from "@nestjs/throttler"
 import UserTypeormEntity from "./infrastructure/persistence/entities/user_typeorm.entity"
 import ProfileTypeormEntity from "./infrastructure/persistence/entities/profile_typeorm.entity"
 import MerchantVerificationTypeormEntity from "./infrastructure/persistence/entities/merchant_verification_typeorm.entity"
+import GeocodedAddressTypeormEntity from "./infrastructure/persistence/entities/geocoded_address_typeorm.entity"
 import MerchantTypeormEntity from "./infrastructure/persistence/entities/merchant_typeorm.entity"
 
 import TypeormUserRepositoryAdapter from "./infrastructure/persistence/adapters/typeorm_user_repository.adapter"
@@ -26,6 +27,10 @@ import HealthController from "./adapters/controllers/health.controller"
 import UserProfileController from "./adapters/controllers/user_profile.controller"
 import SellerOnboardingController from "./adapters/controllers/seller_onboarding.controller"
 import CourierOnboardingController from "./adapters/controllers/courier_onboarding.controller"
+import GeoGrpcController from "./adapters/controllers/geo_grpc.controller"
+import GeocodingUsecaseService from "./application/services/geocoding_usecase.service"
+import NominatimGeocodingAdapter from "./infrastructure/geocoding/nominatim_geocoding.adapter"
+import TypeormGeocodedAddressRepositoryAdapter from "./infrastructure/persistence/adapters/typeorm_geocoded_address_repository.adapter"
 import IdentityGrpcController from "./adapters/controllers/identity_grpc.controller"
 import MetricsController from "./adapters/controllers/metrics.controller"
 import PrincipalAliasTypeormEntity from "./infrastructure/persistence/entities/principal_alias_typeorm.entity"
@@ -73,7 +78,8 @@ import JwksController from "./adapters/controllers/jwks.controller"
             UserTypeormEntity,
             ProfileTypeormEntity,
             MerchantVerificationTypeormEntity,
-            MerchantTypeormEntity
+            MerchantTypeormEntity,
+            GeocodedAddressTypeormEntity
           ],
           synchronize: false
         }
@@ -87,7 +93,8 @@ import JwksController from "./adapters/controllers/jwks.controller"
       UserTypeormEntity,
       ProfileTypeormEntity,
       MerchantVerificationTypeormEntity,
-      MerchantTypeormEntity
+      MerchantTypeormEntity,
+      GeocodedAddressTypeormEntity
     ])
   ],
   controllers: [
@@ -98,7 +105,8 @@ import JwksController from "./adapters/controllers/jwks.controller"
     UserProfileController,
     SellerOnboardingController,
     CourierOnboardingController,
-    IdentityGrpcController
+    IdentityGrpcController,
+    GeoGrpcController
   ],
   providers: [
     JwtKeyProvider,
@@ -112,6 +120,7 @@ import JwksController from "./adapters/controllers/jwks.controller"
     SelfOrStaffGuard,
     AuthUsecaseService,
     UserProfileUsecaseService,
+    GeocodingUsecaseService,
     SellerOnboardingUsecaseService,
     CourierOnboardingUsecaseService,
     CourierRegistrationUsecaseService,
@@ -134,6 +143,14 @@ import JwksController from "./adapters/controllers/jwks.controller"
     {
       provide: "FleetRegistryPort",
       useClass: FleetRegistryGrpcAdapter
+    },
+    {
+      provide: "GeocodingProviderPort",
+      useClass: NominatimGeocodingAdapter
+    },
+    {
+      provide: "GeocodedAddressRepositoryPort",
+      useClass: TypeormGeocodedAddressRepositoryAdapter
     }
   ]
 })

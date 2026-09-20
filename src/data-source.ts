@@ -5,7 +5,11 @@ import { Principals1788512628577 } from "./migrations/1788512628577-Principals"
 import { TokenLifecycle1788900000000 } from "./migrations/1788900000000-TokenLifecycle"
 import { ProfileProvenance1788950000000 } from "./migrations/1788950000000-ProfileProvenance"
 import { PrincipalForEveryUser1789000000000 } from "./migrations/1789000000000-PrincipalForEveryUser"
+import { GeocodedAddresses1789100000000 } from "./migrations/1789100000000-GeocodedAddresses"
+import { ProfileCoordinates1789200000000 } from "./migrations/1789200000000-ProfileCoordinates"
+import { MerchantStoreAddress1789300000000 } from "./migrations/1789300000000-MerchantStoreAddress"
 
+import GeocodedAddressTypeormEntity from "./infrastructure/persistence/entities/geocoded_address_typeorm.entity"
 import MerchantTypeormEntity from "./infrastructure/persistence/entities/merchant_typeorm.entity"
 import MerchantVerificationTypeormEntity from "./infrastructure/persistence/entities/merchant_verification_typeorm.entity"
 import PrincipalAliasTypeormEntity from "./infrastructure/persistence/entities/principal_alias_typeorm.entity"
@@ -35,8 +39,9 @@ export default new DataSource({
     UserTypeormEntity,
     ProfileTypeormEntity,
     MerchantVerificationTypeormEntity,
-    MerchantTypeormEntity
+    MerchantTypeormEntity,
+    GeocodedAddressTypeormEntity
   ],
-  migrations: [InitialSchema1788322826135, Principals1788512628577, TokenLifecycle1788900000000, ProfileProvenance1788950000000, PrincipalForEveryUser1789000000000],
+  migrations: [InitialSchema1788322826135, Principals1788512628577, TokenLifecycle1788900000000, ProfileProvenance1788950000000, PrincipalForEveryUser1789000000000, GeocodedAddresses1789100000000, ProfileCoordinates1789200000000, MerchantStoreAddress1789300000000],
   synchronize: false
 })

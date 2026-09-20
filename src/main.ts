@@ -65,8 +65,11 @@ async function bootstrap() {
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.GRPC,
     options: {
-      package: "identity.v1",
-      protoPath: contractProto("identity/v1/identity.proto"),
+      package: ["identity.v1", "geo.v1"],
+      protoPath: [
+        contractProto("identity/v1/identity.proto"),
+        contractProto("geo/v1/geo.proto")
+      ],
       loader: {
         keepCase: true
       },

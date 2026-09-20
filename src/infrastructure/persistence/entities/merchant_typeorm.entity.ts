@@ -35,6 +35,24 @@ class MerchantTypeormEntity {
   @Column({ nullable: true })
   verifiedAt?: Date
 
+  @Column({ default: "" })
+  streetAddress!: string
+
+  @Column({ default: "" })
+  city!: string
+
+  @Column({ default: "" })
+  postalCode!: string
+
+  @Column({ type: "double precision", nullable: true })
+  latitude?: number
+
+  @Column({ type: "double precision", nullable: true })
+  longitude?: number
+
+  @Column({ type: "timestamptz", nullable: true })
+  geocodedAt?: Date
+
   @CreateDateColumn()
   createdAt!: Date
 

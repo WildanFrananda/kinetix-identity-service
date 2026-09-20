@@ -29,7 +29,13 @@ class TypeormMerchantRepositoryAdapter implements MerchantRepositoryPort {
       record.taxId,
       record.status,
       record.description,
-      record.verifiedAt
+      record.verifiedAt,
+      record.streetAddress,
+      record.city,
+      record.postalCode,
+      record.latitude === null || record.latitude === undefined ? undefined : Number(record.latitude),
+      record.longitude === null || record.longitude === undefined ? undefined : Number(record.longitude),
+      record.geocodedAt
     )
   }
 
@@ -45,7 +51,13 @@ class TypeormMerchantRepositoryAdapter implements MerchantRepositoryPort {
       record.taxId,
       record.status,
       record.description,
-      record.verifiedAt
+      record.verifiedAt,
+      record.streetAddress,
+      record.city,
+      record.postalCode,
+      record.latitude === null || record.latitude === undefined ? undefined : Number(record.latitude),
+      record.longitude === null || record.longitude === undefined ? undefined : Number(record.longitude),
+      record.geocodedAt
     )
   }
 
@@ -60,6 +72,13 @@ class TypeormMerchantRepositoryAdapter implements MerchantRepositoryPort {
       taxId: merchant.taxId,
       status: merchant.status,
       verifiedAt: merchant.verifiedAt
+    ,
+      streetAddress: merchant.streetAddress,
+      city: merchant.city,
+      postalCode: merchant.postalCode,
+      latitude: merchant.latitude,
+      longitude: merchant.longitude,
+      geocodedAt: merchant.geocodedAt
     })
     const saved = await this.repo.save(entity)
     return new MerchantEntity(
@@ -71,7 +90,13 @@ class TypeormMerchantRepositoryAdapter implements MerchantRepositoryPort {
       saved.taxId,
       saved.status,
       saved.description,
-      saved.verifiedAt
+      saved.verifiedAt,
+      saved.streetAddress,
+      saved.city,
+      saved.postalCode,
+      saved.latitude === null || saved.latitude === undefined ? undefined : Number(saved.latitude),
+      saved.longitude === null || saved.longitude === undefined ? undefined : Number(saved.longitude),
+      saved.geocodedAt
     )
   }
 
@@ -85,7 +110,13 @@ class TypeormMerchantRepositoryAdapter implements MerchantRepositoryPort {
       record.taxId,
       record.status,
       record.description,
-      record.verifiedAt
+      record.verifiedAt,
+      record.streetAddress,
+      record.city,
+      record.postalCode,
+      record.latitude === null || record.latitude === undefined ? undefined : Number(record.latitude),
+      record.longitude === null || record.longitude === undefined ? undefined : Number(record.longitude),
+      record.geocodedAt
     )
   }
 }

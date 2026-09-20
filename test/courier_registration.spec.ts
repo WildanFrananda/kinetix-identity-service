@@ -15,7 +15,7 @@ const PRINCIPAL = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 function input(overrides: Partial<RegisterCourierInputDto> = {}): RegisterCourierInputDto {
   return {
     email: "driver@kinetix.test",
-    password: "supersecret1234",
+    password: "fixture-password-not-real",
     fullName: "Budi Santoso",
     phoneNumber: "081200000000",
     vehiclePlate: "B 1234 KIN",
@@ -100,8 +100,8 @@ describe("CourierRegistrationUsecaseService Unit Tests", () => {
     it("never sends the password anywhere but this service", async () => {
       await service.register(input())
 
-      expect(JSON.stringify(mockFleet.registerDriver.mock.calls)).not.toContain("supersecret1234")
-      expect(JSON.stringify(mockProfile.updateProfile.mock.calls)).not.toContain("supersecret1234")
+      expect(JSON.stringify(mockFleet.registerDriver.mock.calls)).not.toContain("fixture-password-not-real")
+      expect(JSON.stringify(mockProfile.updateProfile.mock.calls)).not.toContain("fixture-password-not-real")
     })
 
     it("files the vehicle against the principal the session names", async () => {

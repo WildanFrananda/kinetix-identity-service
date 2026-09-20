@@ -12,6 +12,18 @@ class OnboardSellerInputDto {
   @IsString()
   @IsNotEmpty()
   taxId!: string
+
+  @IsString()
+  @IsNotEmpty()
+  streetAddress!: string
+
+  @IsString()
+  @IsNotEmpty()
+  city!: string
+
+  @IsString()
+  @IsNotEmpty()
+  postalCode!: string
 }
 
 export default OnboardSellerInputDto
