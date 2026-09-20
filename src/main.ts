@@ -17,7 +17,7 @@ import { grpcMetricsInterceptor } from "./infrastructure/observability/grpc_metr
 import { grpcMethodPathsOf } from "./infrastructure/observability/grpc_method_paths"
 import { installHttpMetrics } from "./infrastructure/observability/http_metrics"
 import { JsonLogger } from "./infrastructure/observability/json_logger"
-import { contractProto } from "./infrastructure/mesh/contract_proto"
+import { contractProto, contractProtoRoot } from "./infrastructure/mesh/contract_proto"
 import { logLevelsFrom } from "./infrastructure/observability/log_levels"
 import { declareGrpcMethod } from "./infrastructure/observability/metrics_registry"
 import { requestIdInterceptor } from "./infrastructure/observability/request_id_interceptor"
@@ -71,7 +71,8 @@ async function bootstrap() {
         contractProto("geo/v1/geo.proto")
       ],
       loader: {
-        keepCase: true
+        keepCase: true,
+        includeDirs: [contractProtoRoot()]
       },
       url: `0.0.0.0:${grpcPort}`,
       credentials: meshServerCredentials(identity),
