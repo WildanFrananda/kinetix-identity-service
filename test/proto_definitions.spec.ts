@@ -52,4 +52,16 @@ describe("the contracts this service serves", () => {
       expect(geo[method]).toBeDefined()
     }
   })
+
+  it("carries may_sell on the merchant answer, which is what this service decides", () => {
+    const definition = loadSync(contractProto("identity/v1/identity.proto"), LOADER)
+    const response = definition["identity.v1.GetMerchantInfoResponse"] as {
+      type: { field: Array<{ name: string; type: string }> }
+    }
+
+    const maySell = response.type.field.find((field) => field.name === "may_sell")
+
+    expect(maySell).toBeDefined()
+    expect(maySell?.type).toBe("TYPE_BOOL")
+  })
 })

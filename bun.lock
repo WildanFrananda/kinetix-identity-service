@@ -22,7 +22,7 @@
         "class-validator": "^0.15.1",
         "fastify": "^5.12.1",
         "jsonwebtoken": "^9.0.2",
-        "kinetix-contracts": "1.0.13",
+        "kinetix-contracts": "1.0.14",
         "passport": "^0.7.0",
         "passport-jwt": "^4.0.1",
         "pg": "^8.23.0",
@@ -929,7 +929,7 @@
 
     "keyv": ["keyv@4.5.4", "", { "dependencies": { "json-buffer": "3.0.1" } }, "sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw=="],
 
-    "kinetix-contracts": ["kinetix-contracts@1.0.13", "", { "dependencies": { "@bufbuild/protobuf": "^2.2.3" } }, "sha512-NTCTo7U8dW7i+pkOSW8Q9+humXSCQz0vSwmlWEEhT+uFyOzqfB/utA2UEUktHwYEH3m+ekrOxxJdFAmYuCOlVA=="],
+    "kinetix-contracts": ["kinetix-contracts@1.0.14", "", { "dependencies": { "@bufbuild/protobuf": "^2.2.3" } }, "sha512-JymRaVOnih32deubkrsDwPYRbRRcIBjitn8enJep+fPfyM46lWGcSXTglGYn80hoe19NKnp7q3Kx2CQecRvQsQ=="],
 
     "leven": ["leven@3.1.0", "", {}, "sha512-qsda+H8jTaUaN/x5vzW2rzc+8Rw4TAQ/4KjB46IwK5VH+IlVeeeje/EoZRpiXvIqjFgK84QffqPztGI3VBLG1A=="],
 
