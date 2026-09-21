@@ -26,6 +26,7 @@ import MerchantRepositoryPort from "../../domain/ports/merchant_repository.port"
 import ProfileEntity from "../../domain/entities/profile.entity"
 import UserEntity from "../../domain/entities/user.entity"
 import MerchantEntity from "../../domain/entities/merchant.entity"
+import { maySell } from "../../domain/merchant_standing"
 
 import { MERCHANT_ALIAS_SERVICE } from "../../application/services/seller_onboarding_usecase.service"
 
@@ -180,7 +181,8 @@ class IdentityGrpcController {
       status: "MERCHANT_STATUS_UNSPECIFIED",
       pickup_address: { street_address: "", city: "", postal_code: "" },
       has_location: false,
-      location: { latitude: 0, longitude: 0 }
+      location: { latitude: 0, longitude: 0 },
+      may_sell: false
     }
 
     if (principalId === "") {
@@ -221,7 +223,9 @@ class IdentityGrpcController {
         location: {
           latitude: placed ? (merchant.latitude as number) : 0,
           longitude: placed ? (merchant.longitude as number) : 0
-        }
+        },
+        // The decision, made once, here. Callers used to read `status` and apply their own rule.
+        may_sell: maySell(merchant.status)
       }
     } catch {
       return empty
