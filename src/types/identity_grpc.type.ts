@@ -86,6 +86,48 @@ type GetMerchantInfoResponse = {
   may_sell: boolean
 }
 
+type ProtoTimestampInput = {
+  seconds?: number | string | { toString(): string }
+  nanos?: number
+}
+
+type ProtoTimestamp = {
+  seconds: number
+  nanos: number
+}
+
+type MerchantCursorInput = {
+  updated_through?: ProtoTimestampInput | null
+  updatedThrough?: ProtoTimestampInput | null
+  last_principal_id?: string
+  lastPrincipalId?: string
+}
+
+type MerchantCursorView = {
+  updated_through: ProtoTimestamp | null
+  last_principal_id: string
+}
+
+type MerchantRecordView = {
+  principal_id: string
+  store_name: string
+  status: MerchantStatus
+  may_sell: boolean
+  updated_at: ProtoTimestamp
+}
+
+type MerchantsChangedSinceRequest = {
+  cursor?: MerchantCursorInput | null
+  limit?: number
+}
+
+type MerchantsChangedSinceResponse = {
+  upserted: MerchantRecordView[]
+  removed_principal_ids: string[]
+  next: MerchantCursorView
+  has_more: boolean
+}
+
 type ValidateTokenRequest = {
   access_token?: string
   accessToken?: string
@@ -100,7 +142,14 @@ type ValidateTokenResponse = {
 
 export type {
   GetMerchantInfoRequest,
+  MerchantCursorInput,
+  MerchantCursorView,
+  MerchantRecordView,
   MerchantStatus,
+  MerchantsChangedSinceRequest,
+  MerchantsChangedSinceResponse,
+  ProtoTimestamp,
+  ProtoTimestampInput,
   PrincipalKind,
   GetMerchantInfoResponse,
   GetPrincipalRequest,
