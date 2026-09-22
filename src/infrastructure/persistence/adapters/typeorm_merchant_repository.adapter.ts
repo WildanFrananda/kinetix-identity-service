@@ -2,6 +2,8 @@ import { Injectable } from "@nestjs/common"
 import { InjectRepository } from "@nestjs/typeorm"
 import { Repository } from "typeorm"
 import MerchantEntity from "../../../domain/entities/merchant.entity"
+import MerchantChange from "../../../domain/entities/merchant_change.entity"
+import MerchantChangePage from "../../../domain/entities/merchant_change_page.entity"
 import MerchantRepositoryPort from "../../../domain/ports/merchant_repository.port"
 import MerchantTypeormEntity from "../entities/merchant_typeorm.entity"
 
@@ -58,6 +60,34 @@ class TypeormMerchantRepositoryAdapter implements MerchantRepositoryPort {
       record.latitude === null || record.latitude === undefined ? undefined : Number(record.latitude),
       record.longitude === null || record.longitude === undefined ? undefined : Number(record.longitude),
       record.geocodedAt
+    )
+  }
+
+  async findChangedSince(
+    updatedThrough: Date | null,
+    lastId: number,
+    limit: number
+  ): Promise<MerchantChangePage> {
+    const query = this.repo
+      .createQueryBuilder("merchant")
+      .orderBy("merchant.updatedAt", "ASC")
+      .addOrderBy("merchant.id", "ASC")
+      .limit(limit + 1)
+
+    if (updatedThrough) {
+      query.where(
+        "(merchant.updatedAt > :updatedThrough OR (merchant.updatedAt = :updatedThrough AND merchant.id > :lastId))",
+        { updatedThrough, lastId }
+      )
+    }
+
+    const records = await query.getMany()
+    const hasMore = records.length > limit
+    const page = hasMore ? records.slice(0, limit) : records
+
+    return new MerchantChangePage(
+      page.map((record) => new MerchantChange(this.toEntity(record), record.updatedAt)),
+      hasMore
     )
   }
 

@@ -43,6 +43,7 @@ describe("the contracts this service serves", () => {
       "GetPrincipal",
       "GetUserProfile",
       "GetMerchantInfo",
+      "MerchantsChangedSince",
       "ValidateToken"
     ]) {
       expect(identity[method]).toBeDefined()
@@ -63,5 +64,27 @@ describe("the contracts this service serves", () => {
 
     expect(maySell).toBeDefined()
     expect(maySell?.type).toBe("TYPE_BOOL")
+  })
+
+  it("pages merchant changes on a cursor, not on an offset", () => {
+    const definition = loadSync(contractProto("identity/v1/identity.proto"), LOADER)
+    const cursor = definition["identity.v1.MerchantCursor"] as {
+      type: { field: Array<{ name: string; type: string }> }
+    }
+    const record = definition["identity.v1.MerchantRecord"] as {
+      type: { field: Array<{ name: string; type: string }> }
+    }
+
+    expect(cursor.type.field.map((field) => field.name)).toEqual([
+      "updated_through",
+      "last_principal_id"
+    ])
+    expect(record.type.field.map((field) => field.name)).toEqual([
+      "principal_id",
+      "store_name",
+      "status",
+      "may_sell",
+      "updated_at"
+    ])
   })
 })

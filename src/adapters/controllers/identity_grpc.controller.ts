@@ -1,7 +1,7 @@
 import { Controller, Inject } from "@nestjs/common"
 import { GrpcMethod } from "@nestjs/microservices"
 import { InjectRepository } from "@nestjs/typeorm"
-import { Repository } from "typeorm"
+import { In, Repository } from "typeorm"
 import PrincipalAliasTypeormEntity from "../../infrastructure/persistence/entities/principal_alias_typeorm.entity"
 import PrincipalTypeormEntity from "../../infrastructure/persistence/entities/principal_typeorm.entity"
 import TokenService from "../../application/services/token.service"
@@ -12,6 +12,9 @@ import type {
   GetPrincipalResponse,
   GetUserProfileRequest,
   GetUserProfileResponse,
+  MerchantRecordView,
+  MerchantsChangedSinceRequest,
+  MerchantsChangedSinceResponse,
   ResolvePrincipalRequest,
   ResolvePrincipalResponse,
   ValidateTokenRequest,
@@ -19,6 +22,7 @@ import type {
 } from "../../types/identity_grpc.type"
 import { principalKindOf } from "../mappers/principal_kind.mapper"
 import { merchantStatusOf } from "../mappers/merchant_status.mapper"
+import { fromProtoTimestamp, toProtoTimestamp } from "../mappers/proto_timestamp.mapper"
 import { withTimeout } from "../../infrastructure/persistence/with_timeout"
 import UserProfileUsecaseService from "../../application/services/user_profile_usecase.service"
 import UserRepositoryPort from "../../domain/ports/user_repository.port"
@@ -31,6 +35,16 @@ import { maySell } from "../../domain/merchant_standing"
 import { MERCHANT_ALIAS_SERVICE } from "../../application/services/seller_onboarding_usecase.service"
 
 const IDENTITY_ALIAS_SERVICE = "identity"
+const MERCHANT_PAGE_DEFAULT = 100
+const MERCHANT_PAGE_MAX = 500
+
+function merchantPageLimitOf(requested: number | undefined): number {
+  if (!requested || requested <= 0) {
+    return MERCHANT_PAGE_DEFAULT
+  }
+
+  return Math.min(Math.floor(requested), MERCHANT_PAGE_MAX)
+}
 
 @Controller()
 class IdentityGrpcController {
@@ -224,12 +238,89 @@ class IdentityGrpcController {
           latitude: placed ? (merchant.latitude as number) : 0,
           longitude: placed ? (merchant.longitude as number) : 0
         },
-        // The decision, made once, here. Callers used to read `status` and apply their own rule.
         may_sell: maySell(merchant.status)
       }
     } catch {
       return empty
     }
+  }
+
+  @GrpcMethod("IdentityService", "MerchantsChangedSince")
+  async merchantsChangedSince(
+    data: MerchantsChangedSinceRequest
+  ): Promise<MerchantsChangedSinceResponse> {
+    const cursor = data.cursor ?? null
+    const updatedThrough = fromProtoTimestamp(cursor?.updated_through ?? cursor?.updatedThrough)
+    const lastPrincipalId = cursor?.last_principal_id ?? cursor?.lastPrincipalId ?? ""
+    const limit = merchantPageLimitOf(data.limit)
+
+    const lastId = await this.merchantIdOf(lastPrincipalId)
+    const page = await withTimeout(
+      this.merchantRepository.findChangedSince(updatedThrough, lastId, limit)
+    )
+
+    const principalIds = await this.principalIdsOf(page.changes.map((change) => change.merchant.id))
+    const upserted: MerchantRecordView[] = page.changes.map((change) => {
+      const principalId = principalIds.get(String(change.merchant.id))
+
+      if (!principalId) {
+        throw new Error(
+          `merchant ${change.merchant.id} has no ${MERCHANT_ALIAS_SERVICE} alias, so it has no principal to report`
+        )
+      }
+
+      return {
+        principal_id: principalId,
+        store_name: change.merchant.storeName,
+        status: merchantStatusOf(change.merchant.status),
+        may_sell: maySell(change.merchant.status),
+        updated_at: toProtoTimestamp(change.updatedAt)
+      }
+    })
+
+    const last = page.changes.at(-1)
+
+    return {
+      upserted,
+      removed_principal_ids: [],
+      next: last
+        ? {
+            updated_through: toProtoTimestamp(last.updatedAt),
+            last_principal_id: upserted[upserted.length - 1].principal_id
+          }
+        : {
+            updated_through: updatedThrough ? toProtoTimestamp(updatedThrough) : null,
+            last_principal_id: lastPrincipalId
+          },
+      has_more: page.hasMore
+    }
+  }
+
+  private async merchantIdOf(principalId: string): Promise<number> {
+    if (principalId === "") {
+      return 0
+    }
+
+    const alias = await withTimeout(
+      this.aliasRepository.findOne({ where: { principalId, service: MERCHANT_ALIAS_SERVICE } })
+    )
+    const id = alias ? Number(alias.localId) : Number.NaN
+
+    return Number.isFinite(id) ? id : 0
+  }
+
+  private async principalIdsOf(merchantIds: number[]): Promise<Map<string, string>> {
+    if (merchantIds.length === 0) {
+      return new Map()
+    }
+
+    const aliases = await withTimeout(
+      this.aliasRepository.find({
+        where: { service: MERCHANT_ALIAS_SERVICE, localId: In(merchantIds.map(String)) }
+      })
+    )
+
+    return new Map(aliases.map((alias) => [alias.localId, alias.principalId]))
   }
 
   @GrpcMethod("IdentityService", "ValidateToken")
