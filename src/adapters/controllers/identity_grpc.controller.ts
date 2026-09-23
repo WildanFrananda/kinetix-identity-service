@@ -127,9 +127,7 @@ class IdentityGrpcController {
       street_address: "",
       city: "",
       postal_code: "",
-      kind: "PRINCIPAL_KIND_UNSPECIFIED",
-      has_location: false,
-      location: { latitude: 0, longitude: 0 }
+      kind: "PRINCIPAL_KIND_UNSPECIFIED"
     }
 
     if (principalId === "") {
@@ -172,11 +170,9 @@ class IdentityGrpcController {
         city: profile ? profile.city : "",
         postal_code: profile ? profile.postalCode : "",
         kind: principalKindOf(alias.principal.kind),
-        has_location: placed,
-        location: {
-          latitude: placed ? (profile?.latitude as number) : 0,
-          longitude: placed ? (profile?.longitude as number) : 0
-        }
+        ...(placed
+          ? { location: { latitude: profile?.latitude as number, longitude: profile?.longitude as number } }
+          : {})
       }
     } catch {
       return empty
@@ -194,8 +190,6 @@ class IdentityGrpcController {
       tax_id: "",
       status: "MERCHANT_STATUS_UNSPECIFIED",
       pickup_address: { street_address: "", city: "", postal_code: "" },
-      has_location: false,
-      location: { latitude: 0, longitude: 0 },
       may_sell: false
     }
 
@@ -233,11 +227,9 @@ class IdentityGrpcController {
           city: merchant.city,
           postal_code: merchant.postalCode
         },
-        has_location: placed,
-        location: {
-          latitude: placed ? (merchant.latitude as number) : 0,
-          longitude: placed ? (merchant.longitude as number) : 0
-        },
+        ...(placed
+          ? { location: { latitude: merchant.latitude as number, longitude: merchant.longitude as number } }
+          : {}),
         may_sell: maySell(merchant.status)
       }
     } catch {

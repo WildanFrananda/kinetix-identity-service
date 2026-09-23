@@ -64,8 +64,7 @@ type GetUserProfileResponse = {
   city: string
   postal_code: string
   kind: PrincipalKind
-  has_location: boolean
-  location: { latitude: number; longitude: number }
+  location?: { latitude: number; longitude: number }
 }
 
 type GetMerchantInfoRequest = {
@@ -81,8 +80,7 @@ type GetMerchantInfoResponse = {
   tax_id: string
   status: MerchantStatus
   pickup_address: { street_address: string; city: string; postal_code: string }
-  has_location: boolean
-  location: { latitude: number; longitude: number }
+  location?: { latitude: number; longitude: number }
   may_sell: boolean
 }
 
