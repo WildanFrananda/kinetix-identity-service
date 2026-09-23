@@ -56,7 +56,7 @@ class MerchantTypeormEntity {
   @CreateDateColumn()
   createdAt!: Date
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ precision: 3 })
   updatedAt!: Date
 }
 
