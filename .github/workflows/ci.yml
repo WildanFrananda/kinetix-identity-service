@@ -79,6 +79,14 @@ jobs:
       - name: A second run must apply nothing
         run: bun dist/migrate.js | grep -q 'schema is up to date'
 
+      # This one needs the database, which is why it lives here and not in `unit`. The failure it
+      # guards — a cursor that reads the same merchant for ever — happens between Postgres and the
+      # driver, so a test with a fake repository passes either way and proves nothing.
+      - name: The merchant cursor advances
+        env:
+          KINETIX_TEST_POSTGRES: "1"
+        run: bunx jest --config jest.config.cjs test/merchant_cursor_precision.spec.ts
+
       # The drift gate. `migration:generate` exits non-zero with "No changes in database schema
       # were found" when the entities and the schema agree — so a SUCCESSFUL generate means
       # someone changed an entity without writing the migration.
