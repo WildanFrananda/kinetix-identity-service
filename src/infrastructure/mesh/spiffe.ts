@@ -2,9 +2,20 @@ import type { PeerAuthContext } from "../../types/mesh.type"
 
 const DEFAULT_TRUST_DOMAIN = "kinetix.local"
 
-const trustDomain = process.env.KINETIX_TRUST_DOMAIN?.trim() || DEFAULT_TRUST_DOMAIN
+const trustDomains: string[] = (() => {
+  const configured = (process.env.KINETIX_TRUST_DOMAIN ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+
+  return configured.length > 0 ? configured : [DEFAULT_TRUST_DOMAIN]
+})()
+
+const trustDomain = trustDomains[0]
 
 const TRUST_DOMAIN = `spiffe://${trustDomain}/service/`
+
+const TRUST_PREFIXES = trustDomains.map((domain) => `spiffe://${domain}/service/`)
 
 function serviceOf(id: string, prefix: string): string | null {
   if (!id.startsWith(prefix)) {
@@ -40,8 +51,10 @@ function peerService(auth: PeerAuthContext | null): string | null {
     }
 
     const normalised = `${url.protocol}//${url.host}${url.pathname}`
-    const service = serviceOf(normalised, TRUST_DOMAIN)
-    if (service === null) {
+    const service = TRUST_PREFIXES.map((prefix) => serviceOf(normalised, prefix)).find(
+      (name) => name !== null
+    )
+    if (service === undefined || service === null) {
       continue
     }
     return service
@@ -50,4 +63,4 @@ function peerService(auth: PeerAuthContext | null): string | null {
   return null
 }
 
-export { peerService, serviceOf, trustDomain, TRUST_DOMAIN }
+export { peerService, serviceOf, trustDomain, trustDomains, TRUST_DOMAIN, TRUST_PREFIXES }

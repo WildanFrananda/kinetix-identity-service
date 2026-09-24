@@ -1,9 +1,27 @@
-import { serviceOf, trustDomain, TRUST_DOMAIN } from "../src/infrastructure/mesh/spiffe"
+import { serviceOf, trustDomain, trustDomains, TRUST_DOMAIN, TRUST_PREFIXES } from "../src/infrastructure/mesh/spiffe"
 
 describe("the trust domain this service accepts", () => {
   it("keeps the domain the estate runs today when the variable is unset", () => {
     expect(trustDomain).toBe("kinetix.local")
+    expect(trustDomains).toEqual(["kinetix.local"])
     expect(TRUST_DOMAIN).toBe("spiffe://kinetix.local/service/")
+    expect(TRUST_PREFIXES).toEqual(["spiffe://kinetix.local/service/"])
+  })
+
+  it("can accept both domains at once, which is what makes a cutover gradual", () => {
+    const both = ["spiffe://kinetix.local/service/", "spiffe://prod.kinetix/service/"]
+
+    for (const domain of ["kinetix.local", "prod.kinetix"]) {
+      const id = `spiffe://${domain}/service/order`
+      const named = both.map((prefix) => serviceOf(id, prefix)).find((n) => n !== null)
+      expect(named).toBe("order")
+    }
+  })
+
+  it("still refuses a domain outside the list", () => {
+    const both = ["spiffe://kinetix.local/service/", "spiffe://prod.kinetix/service/"]
+    const named = both.map((prefix) => serviceOf("spiffe://staging.kinetix/service/order", prefix))
+    expect(named.every((n) => n === null)).toBe(true)
   })
 
   it("names the service in an id from the configured domain", () => {
