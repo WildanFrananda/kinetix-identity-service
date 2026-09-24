@@ -1,6 +1,23 @@
 import type { PeerAuthContext } from "../../types/mesh.type"
 
-const TRUST_DOMAIN = "spiffe://kinetix.local/service/"
+const DEFAULT_TRUST_DOMAIN = "kinetix.local"
+
+const trustDomain = process.env.KINETIX_TRUST_DOMAIN?.trim() || DEFAULT_TRUST_DOMAIN
+
+const TRUST_DOMAIN = `spiffe://${trustDomain}/service/`
+
+function serviceOf(id: string, prefix: string): string | null {
+  if (!id.startsWith(prefix)) {
+    return null
+  }
+
+  const service = id.slice(prefix.length)
+  if (service.length === 0 || service.includes("/")) {
+    return null
+  }
+
+  return service
+}
 
 function peerService(auth: PeerAuthContext | null): string | null {
   const subjectAltName = auth?.sslPeerCertificate?.subjectaltname
@@ -23,12 +40,8 @@ function peerService(auth: PeerAuthContext | null): string | null {
     }
 
     const normalised = `${url.protocol}//${url.host}${url.pathname}`
-    if (!normalised.startsWith(TRUST_DOMAIN)) {
-      continue
-    }
-
-    const service = normalised.slice(TRUST_DOMAIN.length)
-    if (service.length === 0 || service.includes("/")) {
+    const service = serviceOf(normalised, TRUST_DOMAIN)
+    if (service === null) {
       continue
     }
     return service
@@ -37,4 +50,4 @@ function peerService(auth: PeerAuthContext | null): string | null {
   return null
 }
 
-export { peerService, TRUST_DOMAIN }
+export { peerService, serviceOf, trustDomain, TRUST_DOMAIN }
