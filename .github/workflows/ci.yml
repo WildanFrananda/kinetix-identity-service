@@ -82,10 +82,10 @@ jobs:
       # This one needs the database, which is why it lives here and not in `unit`. The failure it
       # guards — a cursor that reads the same merchant for ever — happens between Postgres and the
       # driver, so a test with a fake repository passes either way and proves nothing.
-      - name: The merchant cursor advances
+      - name: The merchant cursor advances and refresh rotation cannot race
         env:
           KINETIX_TEST_POSTGRES: "1"
-        run: bunx jest --config jest.config.cjs test/merchant_cursor_precision.spec.ts
+        run: bunx jest --config jest.config.cjs test/merchant_cursor_precision.spec.ts test/refresh_rotation_race.spec.ts
 
       # The drift gate. `migration:generate` exits non-zero with "No changes in database schema
       # were found" when the entities and the schema agree — so a SUCCESSFUL generate means

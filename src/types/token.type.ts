@@ -35,4 +35,6 @@ type TokenPair = {
   expiresIn: number
 }
 
-export type { AccessClaims, RefreshClaims, TokenPair, TokenSubject }
+type RotationOutcome = { pair: TokenPair } | { refused: string }
+
+export type { AccessClaims, RefreshClaims, RotationOutcome, TokenPair, TokenSubject }
