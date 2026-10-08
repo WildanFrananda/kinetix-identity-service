@@ -7,7 +7,7 @@ import * as jwt from "jsonwebtoken"
 import JwtKeyProvider from "../../infrastructure/crypto/jwt_key_provider"
 import RefreshTokenTypeormEntity from "../../infrastructure/persistence/entities/refresh_token_typeorm.entity"
 import RevokedAccessTokenTypeormEntity from "../../infrastructure/persistence/entities/revoked_access_token_typeorm.entity"
-import type { AccessClaims, RefreshClaims, TokenPair, TokenSubject } from "../../types/token.type"
+import type { AccessClaims, RefreshClaims, RotationOutcome, TokenPair, TokenSubject } from "../../types/token.type"
 import type { JwksDocument } from "../../types/jwks.type"
 import type { MfaChallengeClaims } from "../../types/two_factor.type"
 
@@ -56,7 +56,12 @@ class TokenService {
     return this.mintPair(user, principalId, randomUUID())
   }
 
-  private async mintPair(user: TokenSubject, principalId: string, familyId: string): Promise<TokenPair> {
+  private async mintPair(
+    user: TokenSubject,
+    principalId: string,
+    familyId: string,
+    refreshTokens: Repository<RefreshTokenTypeormEntity> = this.refreshRepository
+  ): Promise<TokenPair> {
     const now: number = Math.floor(Date.now() / 1000)
     const accessJti: string = randomUUID()
     const refreshJti: string = randomUUID()
@@ -95,8 +100,8 @@ class TokenService {
       { algorithm: "RS256", keyid: this.keys.kid }
     )
 
-    await this.refreshRepository.save(
-      this.refreshRepository.create({
+    await refreshTokens.save(
+      refreshTokens.create({
         jti: refreshJti,
         familyId,
         principalId,
@@ -166,32 +171,45 @@ class TokenService {
       throw new UnauthorizedException("This is not a refresh token")
     }
 
-    const stored = await this.refreshRepository.findOne({ where: { jti: String(claims.jti) } })
-    if (!stored) {
-      throw new UnauthorizedException("This refresh token is not recognised")
+    const outcome: RotationOutcome = await this.refreshRepository.manager.transaction(async (manager) => {
+      const refreshTokens = manager.getRepository(RefreshTokenTypeormEntity)
+      const stored = await refreshTokens.findOne({
+        where: { jti: String(claims.jti) },
+        lock: { mode: "pessimistic_write" }
+      })
+
+      if (!stored) {
+        return { refused: "This refresh token is not recognised" }
+      }
+
+      if (stored.revokedAt) {
+        return { refused: "This refresh token has been revoked" }
+      }
+
+      if (stored.usedAt) {
+        await this.revokeFamilyWith(refreshTokens, stored.familyId, "rotation_reuse")
+        return { refused: "This refresh token has already been used; the session has been revoked" }
+      }
+
+      if (stored.expiresAt.getTime() <= Date.now()) {
+        return { refused: "This refresh token has expired" }
+      }
+
+      const pair = await this.mintPair(user, stored.principalId, stored.familyId, refreshTokens)
+
+      const replacement = this.decodeWithoutVerifying(pair.refreshToken)
+      stored.usedAt = new Date()
+      stored.replacedByJti = replacement?.jti ? String(replacement.jti) : null
+      await refreshTokens.save(stored)
+
+      return { pair }
+    })
+
+    if ("refused" in outcome) {
+      throw new UnauthorizedException(outcome.refused)
     }
 
-    if (stored.revokedAt) {
-      throw new UnauthorizedException("This refresh token has been revoked")
-    }
-
-    if (stored.usedAt) {
-      await this.revokeFamily(stored.familyId, "rotation_reuse")
-      throw new UnauthorizedException("This refresh token has already been used; the session has been revoked")
-    }
-
-    if (stored.expiresAt.getTime() <= Date.now()) {
-      throw new UnauthorizedException("This refresh token has expired")
-    }
-
-    const pair = await this.mintPair(user, stored.principalId, stored.familyId)
-
-    const replacement = this.decodeWithoutVerifying(pair.refreshToken)
-    stored.usedAt = new Date()
-    stored.replacedByJti = replacement?.jti ? String(replacement.jti) : null
-    await this.refreshRepository.save(stored)
-
-    return pair
+    return outcome.pair
   }
 
   async logout(accessClaims: AccessClaims, refreshFamilyId?: string): Promise<void> {
@@ -212,7 +230,15 @@ class TokenService {
   }
 
   async revokeFamily(familyId: string, reason: string): Promise<void> {
-    await this.refreshRepository.update(
+    await this.revokeFamilyWith(this.refreshRepository, familyId, reason)
+  }
+
+  private async revokeFamilyWith(
+    refreshTokens: Repository<RefreshTokenTypeormEntity>,
+    familyId: string,
+    reason: string
+  ): Promise<void> {
+    await refreshTokens.update(
       { familyId, revokedAt: IsNull() },
       { revokedAt: new Date(), revokedReason: reason }
     )

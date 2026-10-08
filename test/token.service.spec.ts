@@ -25,7 +25,7 @@ function makeKeyProvider(pem?: string): JwtKeyProvider {
 
 function makeRepository<T extends Record<string, any>>() {
   const rows: T[] = []
-  return {
+  const repository = {
     rows,
     create: (data: T) => ({ ...data }) as T,
     save: jest.fn(async (row: T) => {
@@ -56,8 +56,13 @@ function makeRepository<T extends Record<string, any>>() {
       }
       return { affected }
     }),
-    delete: jest.fn(async () => ({ affected: 0 }))
+    delete: jest.fn(async () => ({ affected: 0 })),
+    manager: {
+      transaction: async <R>(work: (manager: { getRepository: () => unknown }) => Promise<R>): Promise<R> =>
+        work({ getRepository: () => repository })
+    }
   }
+  return repository
 }
 
 function makeService(overrides: Record<string, string> = {}, keyProvider?: JwtKeyProvider) {
