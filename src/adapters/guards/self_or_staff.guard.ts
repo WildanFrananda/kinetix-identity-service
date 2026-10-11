@@ -1,10 +1,14 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable, SetMetadata } from "@nestjs/common"
+import { applyDecorators, CanActivate, ExecutionContext, ForbiddenException, Injectable, SetMetadata } from "@nestjs/common"
 import { Reflector } from "@nestjs/core"
 import type { AuthenticatedRequest } from "../../types/request.type"
 
 const SELF_PARAM_KEY = "kinetix:selfParam"
+const OWNER_ONLY_KEY = "kinetix:ownerOnly"
 
 const SelfParam = (param: string) => SetMetadata(SELF_PARAM_KEY, param)
+
+const OwnerParam = (param: string) =>
+  applyDecorators(SetMetadata(SELF_PARAM_KEY, param), SetMetadata(OWNER_ONLY_KEY, true))
 
 @Injectable()
 class SelfOrStaffGuard implements CanActivate {
@@ -27,7 +31,8 @@ class SelfOrStaffGuard implements CanActivate {
       throw new ForbiddenException("This route requires a verified caller")
     }
 
-    if (claims.role === "admin") {
+    const ownerOnly: boolean = this.reflector.get<boolean>(OWNER_ONLY_KEY, context.getHandler()) ?? false
+    if (claims.role === "admin" && !ownerOnly) {
       return true
     }
 
@@ -41,4 +46,4 @@ class SelfOrStaffGuard implements CanActivate {
 }
 
 export default SelfOrStaffGuard
-export { SELF_PARAM_KEY, SelfParam }
+export { OWNER_ONLY_KEY, OwnerParam, SELF_PARAM_KEY, SelfParam }
