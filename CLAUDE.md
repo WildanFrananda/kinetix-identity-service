@@ -31,3 +31,11 @@ The two-factor routes take `OwnerParam`, not `SelfParam`: an admin may act on an
 and seller application, but not on its second factor. Setting one up hands back the secret, so an admin
 who set up and enabled it on someone else's account held that person's second factor and locked them
 out — and could not undo it, because disabling needs a code from the owner.
+
+## The image carries production dependencies only
+
+The runtime stage copies `node_modules` from a `deps` stage that runs `bun install --frozen-lockfile
+--production`, not from the builder. It used to copy the builder's, so jest, ts-jest, eslint, the Nest
+CLI and TypeScript shipped to production; on 2026-10-11 the image scan failed on two critical handlebars
+CVEs that reached the image only through ts-jest. Every module `dist/` requires is in `dependencies`; a
+package the running service needs belongs there, not in `devDependencies`.
