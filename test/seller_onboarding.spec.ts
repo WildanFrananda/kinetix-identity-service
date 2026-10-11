@@ -85,6 +85,50 @@ describe("SellerOnboardingUsecaseService Unit Tests", () => {
     expect(mockVerificationRepo.save).not.toHaveBeenCalled()
   })
 
+  it.each(["courier", "admin"] as const)("refuses a %s's application rather than revoking that role", async (role) => {
+    user.role = role
+    mockVerificationRepo.findByUserId.mockResolvedValue(null)
+
+    await expect(
+      service.onboardSeller(1, {
+        storeName: "Kinetix Store",
+        businessRegistrationNumber: "REG-100",
+        taxId: "TAX-200",
+        streetAddress: "Jl. Cikini Raya No. 99",
+        city: "Jakarta",
+        postalCode: "10330"
+      })
+    ).rejects.toThrow("would revoke that role")
+    expect(mockVerificationRepo.save).not.toHaveBeenCalled()
+  })
+
+  it.each(["courier", "admin"] as const)("refuses to approve a %s as a seller and changes nothing", async (role) => {
+    user.role = role
+    mockVerificationRepo.findByUserId.mockResolvedValue(pending())
+
+    await expect(service.approveVerification(1)).rejects.toThrow("would revoke that role")
+    expect(user.role).toBe(role)
+    expect(mockUserRepo.save).not.toHaveBeenCalled()
+    expect(mockMerchantRepo.save).not.toHaveBeenCalled()
+    expect(mockVerificationRepo.save).not.toHaveBeenCalled()
+    expect(mockPrincipalResolver.syncKind).not.toHaveBeenCalled()
+  })
+
+  it("approves a seller again without refusing the role it already holds", async () => {
+    user.role = "seller"
+    mockVerificationRepo.findByUserId.mockResolvedValue(pending())
+    mockVerificationRepo.save.mockImplementation(async (v: MerchantVerificationEntity) => v)
+    mockMerchantRepo.findByUserId.mockResolvedValue(null)
+    mockMerchantRepo.save.mockImplementation(async (m: MerchantEntity) => new MerchantEntity(
+      7, m.userId, m.storeName, m.slug, m.businessRegistrationNumber, m.taxId, m.status, m.description, m.verifiedAt
+    ))
+
+    const approved = await service.approveVerification(1)
+
+    expect(approved.status).toBe("verified")
+    expect(user.role).toBe("seller")
+  })
+
   it("should approve pending seller verification and create active MerchantEntity without API Key", async () => {
     mockVerificationRepo.findByUserId.mockResolvedValue(pending())
     mockVerificationRepo.save.mockImplementation(async (v: MerchantVerificationEntity) => v)

@@ -11,7 +11,7 @@ import type { AccessClaims } from "../../types/token.type"
 import type { CurrentUserView, LogoutBody } from "../../types/auth.type"
 import type { TwoFactorChallenge, TwoFactorSetup } from "../../types/two_factor.type"
 import { CurrentUser, Public } from "../decorators/auth.decorators"
-import SelfOrStaffGuard, { SelfParam } from "../guards/self_or_staff.guard"
+import SelfOrStaffGuard, { OwnerParam } from "../guards/self_or_staff.guard"
 
 @Controller("api/v1/auth")
 @UseGuards(ThrottlerGuard)
@@ -71,7 +71,7 @@ class AuthController {
   @Post("2fa/setup/:id")
   @HttpCode(HttpStatus.OK)
   @UseGuards(SelfOrStaffGuard)
-  @SelfParam("id")
+  @OwnerParam("id")
   async setupTwoFactor(@Param("id", ParseIntPipe) userId: number): Promise<TwoFactorSetup> {
     return await this.authUsecase.setupTwoFactor(userId)
   }
@@ -79,7 +79,7 @@ class AuthController {
   @Post("2fa/enable/:id")
   @HttpCode(HttpStatus.OK)
   @UseGuards(SelfOrStaffGuard)
-  @SelfParam("id")
+  @OwnerParam("id")
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   async enableTwoFactor(
     @Param("id", ParseIntPipe) userId: number,
@@ -91,7 +91,7 @@ class AuthController {
   @Post("2fa/disable/:id")
   @HttpCode(HttpStatus.OK)
   @UseGuards(SelfOrStaffGuard)
-  @SelfParam("id")
+  @OwnerParam("id")
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   async disableTwoFactor(
     @Param("id", ParseIntPipe) userId: number,

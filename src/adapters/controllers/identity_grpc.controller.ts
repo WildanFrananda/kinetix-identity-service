@@ -1,5 +1,6 @@
-import { Controller, Inject } from "@nestjs/common"
-import { GrpcMethod } from "@nestjs/microservices"
+import { Controller, Inject, Logger, NotFoundException, UnauthorizedException } from "@nestjs/common"
+import { GrpcMethod, RpcException } from "@nestjs/microservices"
+import { status } from "@grpc/grpc-js"
 import { InjectRepository } from "@nestjs/typeorm"
 import { In, Repository } from "typeorm"
 import PrincipalAliasTypeormEntity from "../../infrastructure/persistence/entities/principal_alias_typeorm.entity"
@@ -48,6 +49,8 @@ function merchantPageLimitOf(requested: number | undefined): number {
 
 @Controller()
 class IdentityGrpcController {
+  private readonly logger = new Logger(IdentityGrpcController.name)
+
   constructor(
     private readonly profileUsecase: UserProfileUsecaseService,
     @Inject("UserRepositoryPort")
@@ -152,7 +155,12 @@ class IdentityGrpcController {
       }
 
       const profile: ProfileEntity | null = await withTimeout(this.profileUsecase.getProfile(userId)).catch(
-        () => null
+        (error: unknown) => {
+          if (error instanceof NotFoundException) {
+            return null
+          }
+          throw error
+        }
       )
 
       const placed =
@@ -174,8 +182,8 @@ class IdentityGrpcController {
           ? { location: { latitude: profile?.latitude as number, longitude: profile?.longitude as number } }
           : {})
       }
-    } catch {
-      return empty
+    } catch (error) {
+      throw this.unavailable("GetUserProfile", principalId, error)
     }
   }
 
@@ -232,8 +240,8 @@ class IdentityGrpcController {
           : {}),
         may_sell: maySell(merchant.status)
       }
-    } catch {
-      return empty
+    } catch (error) {
+      throw this.unavailable("GetMerchantInfo", principalId, error)
     }
   }
 
@@ -325,8 +333,11 @@ class IdentityGrpcController {
     let claims
     try {
       claims = await this.tokenService.verifyAccess(token)
-    } catch {
-      return { valid: false, principal_id: "", kind: "PRINCIPAL_KIND_UNSPECIFIED", reason: "invalid token" }
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        return { valid: false, principal_id: "", kind: "PRINCIPAL_KIND_UNSPECIFIED", reason: "invalid token" }
+      }
+      throw this.unavailable("ValidateToken", "", error)
     }
 
     const principal = await withTimeout(this.principalRepository.findOne({ where: { id: claims.sub } }))
@@ -335,6 +346,17 @@ class IdentityGrpcController {
     }
 
     return { valid: true, principal_id: principal.id, kind: principalKindOf(principal.kind), reason: "" }
+  }
+
+  private unavailable(method: string, principalId: string, error: unknown): RpcException {
+    this.logger.error(
+      `${method} for ${principalId || "a token"} could not be answered: ` +
+        `${error instanceof Error ? error.message : String(error)}`
+    )
+    return new RpcException({
+      code: status.UNAVAILABLE,
+      message: `identity could not read what ${method} asks for; nothing is known either way`
+    })
   }
 }
 

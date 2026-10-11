@@ -31,6 +31,7 @@ class SellerOnboardingUsecaseService {
     if (!user) {
       throw new NotFoundException(`User with ID ${userId} not found`)
     }
+    this.requireMayBecomeSeller(user)
 
     const existing: MerchantVerificationEntity | null = await this.verificationRepository.findByUserId(userId)
 
@@ -108,6 +109,7 @@ class SellerOnboardingUsecaseService {
     if (!user) {
       throw new NotFoundException(`User with ID ${userId} not found`)
     }
+    this.requireMayBecomeSeller(user)
 
     const verifiedAt = new Date()
 
@@ -153,6 +155,15 @@ class SellerOnboardingUsecaseService {
     await this.verificationRepository.save(verification)
 
     return merchant
+  }
+
+  private requireMayBecomeSeller(user: UserEntity): void {
+    if (user.role === "customer" || user.role === "seller") {
+      return
+    }
+    throw new ConflictException(
+      `Account ${user.id} is a ${user.role}; making it a seller would revoke that role`
+    )
   }
 
   private async uniqueSlug(storeName: string, userId: number): Promise<string> {
