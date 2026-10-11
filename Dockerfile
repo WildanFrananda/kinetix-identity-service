@@ -1,9 +1,16 @@
+FROM oven/bun:1-alpine@sha256:07235578f79ef8c6f97d94aee7938e76f5cdba5f21ae5dbfdd3d3d38058437eb AS deps
+
+WORKDIR /app
+
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile --production
+
 FROM oven/bun:1-alpine@sha256:07235578f79ef8c6f97d94aee7938e76f5cdba5f21ae5dbfdd3d3d38058437eb AS builder
 
 WORKDIR /app
 
-COPY package.json bun.lock* ./
-RUN bun install
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
 
 COPY . .
 
@@ -22,12 +29,12 @@ ENV PORT=5000
 ENV GRPC_PORT=50052
 
 COPY package.json ./
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 # No `COPY proto`. The .proto travels inside kinetix-contracts, which is already in
 # node_modules above — copying one here again would be the vendored second copy this segment
 # exists to delete.
-
+    
 EXPOSE 5000 50052
 
 USER bun
