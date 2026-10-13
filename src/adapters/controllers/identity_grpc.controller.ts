@@ -159,6 +159,7 @@ class IdentityGrpcController {
           if (error instanceof NotFoundException) {
             return null
           }
+
           throw error
         }
       )
@@ -178,9 +179,11 @@ class IdentityGrpcController {
         city: profile ? profile.city : "",
         postal_code: profile ? profile.postalCode : "",
         kind: principalKindOf(alias.principal.kind),
-        ...(placed
-          ? { location: { latitude: profile?.latitude as number, longitude: profile?.longitude as number } }
-          : {})
+        ...(
+          placed
+            ? { location: { latitude: profile?.latitude as number, longitude: profile?.longitude as number } }
+            : {}
+        )
       }
     } catch (error) {
       throw this.unavailable("GetUserProfile", principalId, error)
@@ -235,9 +238,11 @@ class IdentityGrpcController {
           city: merchant.city,
           postal_code: merchant.postalCode
         },
-        ...(placed
-          ? { location: { latitude: merchant.latitude as number, longitude: merchant.longitude as number } }
-          : {}),
+        ...(
+          placed
+            ? { location: { latitude: merchant.latitude as number, longitude: merchant.longitude as number } }
+            : {}
+        ),
         may_sell: maySell(merchant.status)
       }
     } catch (error) {
@@ -304,6 +309,7 @@ class IdentityGrpcController {
     const alias = await withTimeout(
       this.aliasRepository.findOne({ where: { principalId, service: MERCHANT_ALIAS_SERVICE } })
     )
+
     const id = alias ? Number(alias.localId) : Number.NaN
 
     return Number.isFinite(id) ? id : 0
@@ -337,6 +343,7 @@ class IdentityGrpcController {
       if (error instanceof UnauthorizedException) {
         return { valid: false, principal_id: "", kind: "PRINCIPAL_KIND_UNSPECIFIED", reason: "invalid token" }
       }
+
       throw this.unavailable("ValidateToken", "", error)
     }
 
@@ -353,6 +360,7 @@ class IdentityGrpcController {
       `${method} for ${principalId || "a token"} could not be answered: ` +
         `${error instanceof Error ? error.message : String(error)}`
     )
+
     return new RpcException({
       code: status.UNAVAILABLE,
       message: `identity could not read what ${method} asks for; nothing is known either way`

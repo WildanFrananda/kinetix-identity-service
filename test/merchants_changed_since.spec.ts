@@ -5,8 +5,7 @@ import MerchantChangePage from "../src/domain/entities/merchant_change_page.enti
 import MerchantRepositoryPort from "../src/domain/ports/merchant_repository.port"
 import { MERCHANT_ALIAS_SERVICE } from "../src/application/services/seller_onboarding_usecase.service"
 import { fromProtoTimestamp, toProtoTimestamp } from "../src/adapters/mappers/proto_timestamp.mapper"
-
-type Ask = { updatedThrough: Date | null; lastId: number; limit: number }
+import type { AliasRow, Ask } from "./types/merchants_changed_since.type"
 
 const NOON = new Date("2026-09-22T12:00:00.000Z")
 const LATER = new Date("2026-09-22T12:05:00.000Z")
@@ -45,8 +44,6 @@ class FakeMerchantRepository implements MerchantRepositoryPort {
     return merchant
   }
 }
-
-type AliasRow = { principalId: string; service: string; localId: string }
 
 function aliasRepositoryOf(rows: AliasRow[]) {
   return {
@@ -99,9 +96,12 @@ describe("the merchant change feed", () => {
 
   it("translates the cursor's principal back into the row the walk stopped at", async () => {
     const repository = new FakeMerchantRepository()
-    const controller = controllerWith(repository, [
-      { principalId: "p-7", service: MERCHANT_ALIAS_SERVICE, localId: "7" }
-    ])
+    const controller = controllerWith(
+      repository,
+      [
+        { principalId: "p-7", service: MERCHANT_ALIAS_SERVICE, localId: "7" }
+      ]
+    )
 
     await controller.merchantsChangedSince({
       cursor: { updated_through: toProtoTimestamp(NOON), last_principal_id: "p-7" }
@@ -139,9 +139,13 @@ describe("the merchant change feed", () => {
       [new MerchantChange(merchant(4, "Toko Sepatu", "verified"), NOON)],
       false
     )
-    const controller = controllerWith(repository, [
-      { principalId: "p-4", service: MERCHANT_ALIAS_SERVICE, localId: "4" }
-    ])
+
+    const controller = controllerWith(
+      repository,
+      [
+        { principalId: "p-4", service: MERCHANT_ALIAS_SERVICE, localId: "4" }
+      ]
+    )
 
     const response = await controller.merchantsChangedSince({})
 
@@ -159,9 +163,13 @@ describe("the merchant change feed", () => {
       [new MerchantChange(merchant(5, "Toko Tutup", "suspended"), NOON)],
       false
     )
-    const controller = controllerWith(repository, [
-      { principalId: "p-5", service: MERCHANT_ALIAS_SERVICE, localId: "5" }
-    ])
+
+    const controller = controllerWith(
+      repository,
+      [
+        { principalId: "p-5", service: MERCHANT_ALIAS_SERVICE, localId: "5" }
+      ]
+    )
 
     const response = await controller.merchantsChangedSince({})
 
@@ -177,6 +185,7 @@ describe("the merchant change feed", () => {
       [new MerchantChange(merchant(6, "Toko Tanpa Principal", "verified"), NOON)],
       false
     )
+
     const controller = controllerWith(repository, [])
 
     await expect(controller.merchantsChangedSince({})).rejects.toThrow(/no .* alias/)
@@ -191,10 +200,14 @@ describe("the merchant change feed", () => {
       ],
       true
     )
-    const controller = controllerWith(repository, [
-      { principalId: "p-1", service: MERCHANT_ALIAS_SERVICE, localId: "1" },
-      { principalId: "p-2", service: MERCHANT_ALIAS_SERVICE, localId: "2" }
-    ])
+
+    const controller = controllerWith(
+      repository,
+      [
+        { principalId: "p-1", service: MERCHANT_ALIAS_SERVICE, localId: "1" },
+        { principalId: "p-2", service: MERCHANT_ALIAS_SERVICE, localId: "2" }
+      ]
+    )
 
     const response = await controller.merchantsChangedSince({})
 
@@ -205,9 +218,12 @@ describe("the merchant change feed", () => {
 
   it("keeps the caller's cursor when nothing changed, rather than sending it back to the start", async () => {
     const repository = new FakeMerchantRepository()
-    const controller = controllerWith(repository, [
-      { principalId: "p-9", service: MERCHANT_ALIAS_SERVICE, localId: "9" }
-    ])
+    const controller = controllerWith(
+      repository,
+      [
+        { principalId: "p-9", service: MERCHANT_ALIAS_SERVICE, localId: "9" }
+      ]
+    )
 
     const response = await controller.merchantsChangedSince({
       cursor: { updated_through: toProtoTimestamp(NOON), last_principal_id: "p-9" }
@@ -231,6 +247,7 @@ describe("a protobuf timestamp", () => {
     expect(fromProtoTimestamp({ seconds: "1790000000", nanos: 0 })?.getTime()).toBe(
       1790000000 * 1000
     )
+
     expect(
       fromProtoTimestamp({ seconds: { toString: () => "1790000000" }, nanos: 0 })?.getTime()
     ).toBe(1790000000 * 1000)

@@ -31,6 +31,7 @@ class SellerOnboardingUsecaseService {
     if (!user) {
       throw new NotFoundException(`User with ID ${userId} not found`)
     }
+
     this.requireMayBecomeSeller(user)
 
     const existing: MerchantVerificationEntity | null = await this.verificationRepository.findByUserId(userId)
@@ -39,6 +40,7 @@ class SellerOnboardingUsecaseService {
       if (existing.status === "verified") {
         throw new ConflictException("This account is already a verified merchant")
       }
+
       existing.storeName = dto.storeName
       existing.businessRegistrationNumber = dto.businessRegistrationNumber
       existing.taxId = dto.taxId
@@ -109,6 +111,7 @@ class SellerOnboardingUsecaseService {
     if (!user) {
       throw new NotFoundException(`User with ID ${userId} not found`)
     }
+
     this.requireMayBecomeSeller(user)
 
     const verifiedAt = new Date()
@@ -161,6 +164,7 @@ class SellerOnboardingUsecaseService {
     if (user.role === "customer" || user.role === "seller") {
       return
     }
+
     throw new ConflictException(
       `Account ${user.id} is a ${user.role}; making it a seller would revoke that role`
     )
@@ -177,6 +181,7 @@ class SellerOnboardingUsecaseService {
     if (!taken || taken.userId === userId) {
       return base
     }
+
     return `${base}-${userId}`
   }
 }

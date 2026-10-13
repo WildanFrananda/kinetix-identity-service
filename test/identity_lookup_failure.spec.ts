@@ -1,4 +1,4 @@
-import { NotFoundException, UnauthorizedException } from "@nestjs/common"
+import { INestMicroservice, NotFoundException, UnauthorizedException } from "@nestjs/common"
 import { MicroserviceOptions, RpcException, Transport } from "@nestjs/microservices"
 import { Test } from "@nestjs/testing"
 import { getRepositoryToken } from "@nestjs/typeorm"
@@ -13,14 +13,12 @@ import PrincipalAliasTypeormEntity from "../src/infrastructure/persistence/entit
 import PrincipalTypeormEntity from "../src/infrastructure/persistence/entities/principal_typeorm.entity"
 import { contractProto, contractProtoRoot } from "../src/infrastructure/mesh/contract_proto"
 import { MERCHANT_ALIAS_SERVICE } from "../src/application/services/seller_onboarding_usecase.service"
-
-type Stubs = {
-  alias?: () => Promise<unknown>
-  user?: () => Promise<UserEntity | null>
-  profile?: () => Promise<unknown>
-  merchant?: () => Promise<MerchantEntity | null>
-  verifyAccess?: () => Promise<unknown>
-}
+import type {
+  IdentityClient,
+  LoadedIdentityPackage,
+  LookupStubs,
+  MerchantAnswer
+} from "./types/identity_lookup.type"
 
 const databaseDown = () => Promise.reject(new Error("connection terminated unexpectedly"))
 
@@ -33,7 +31,7 @@ function aliasFor(service: string) {
   })
 }
 
-function providersFor(stubs: Stubs) {
+function providersFor(stubs: LookupStubs) {
   return {
     profileUsecase: { getProfile: stubs.profile ?? (async () => null) },
     userRepository: { findById: stubs.user ?? (async () => new UserEntity(1, "a@kinetix.test", "h", "customer")) },
@@ -44,7 +42,7 @@ function providersFor(stubs: Stubs) {
   }
 }
 
-function controllerWith(stubs: Stubs): IdentityGrpcController {
+function controllerWith(stubs: LookupStubs): IdentityGrpcController {
   const p = providersFor(stubs)
   return new IdentityGrpcController(
     p.profileUsecase as never,
@@ -57,7 +55,20 @@ function controllerWith(stubs: Stubs): IdentityGrpcController {
 }
 
 function merchant(): MerchantEntity {
-  return new MerchantEntity(1, 9, "Toko", "toko", "brn", "tax", "verified", undefined, undefined, "Jl. A", "Jakarta", "10110")
+  return new MerchantEntity(
+    1,
+    9,
+    "Toko",
+    "toko",
+    "brn",
+    "tax",
+    "verified",
+    undefined,
+    undefined,
+    "Jl. A",
+    "Jakarta",
+    "10110"
+  )
 }
 
 async function codeOf(call: Promise<unknown>): Promise<number | undefined> {
@@ -67,8 +78,10 @@ async function codeOf(call: Promise<unknown>): Promise<number | undefined> {
     if (error instanceof RpcException) {
       return (error.getError() as { code: number }).code
     }
+
     throw error
   }
+
   return undefined
 }
 
@@ -131,15 +144,16 @@ describe("an identity lookup that cannot be answered", () => {
 
 describe("on the wire", () => {
   const port = 41000 + Math.floor(Math.random() * 2000)
-  let app: Awaited<ReturnType<Awaited<ReturnType<ReturnType<typeof Test.createTestingModule>["compile"]>>["createNestMicroservice"]>>
+  let app: INestMicroservice
   let failing = true
-  let client: grpc.Client & Record<string, (...args: unknown[]) => unknown>
+  let client: IdentityClient
 
   beforeAll(async () => {
     const p = providersFor({
       alias: () => (failing ? databaseDown() : aliasFor(MERCHANT_ALIAS_SERVICE)()),
       merchant: async () => merchant()
     })
+
     const moduleRef = await Test.createTestingModule({
       controllers: [IdentityGrpcController],
       providers: [
@@ -161,17 +175,24 @@ describe("on the wire", () => {
         url: `127.0.0.1:${port}`
       }
     })
+
     app.useLogger(false)
     await app.listen()
 
-    const definition = protoLoader.loadSync(contractProto("identity/v1/identity.proto"), {
-      keepCase: true,
-      includeDirs: [contractProtoRoot()]
-    })
-    const loaded = grpc.loadPackageDefinition(definition) as unknown as {
-      identity: { v1: { IdentityService: new (address: string, credentials: grpc.ChannelCredentials) => typeof client } }
-    }
-    client = new loaded.identity.v1.IdentityService(`127.0.0.1:${port}`, grpc.credentials.createInsecure())
+    const definition = protoLoader.loadSync(
+      contractProto("identity/v1/identity.proto"),
+      {
+        keepCase: true,
+        includeDirs: [contractProtoRoot()]
+      }
+    )
+
+    const loaded = grpc.loadPackageDefinition(definition) as unknown as LoadedIdentityPackage
+
+    client = new loaded.identity.v1.IdentityService(
+      `127.0.0.1:${port}`,
+      grpc.credentials.createInsecure()
+    )
   })
 
   afterAll(async () => {
@@ -179,7 +200,7 @@ describe("on the wire", () => {
     await app?.close()
   })
 
-  function getMerchantInfo(): Promise<{ found: boolean; may_sell: boolean }> {
+  function getMerchantInfo(): Promise<MerchantAnswer> {
     return new Promise((resolve, reject) => {
       client.GetMerchantInfo({ principal_id: "p-1" }, (error: grpc.ServiceError | null, response: never) =>
         error ? reject(error) : resolve(response)
