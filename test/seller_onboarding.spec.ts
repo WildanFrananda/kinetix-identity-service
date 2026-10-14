@@ -3,6 +3,20 @@ import MerchantEntity from "../src/domain/entities/merchant.entity"
 import UserEntity from "../src/domain/entities/user.entity"
 import SellerOnboardingUsecaseService from "../src/application/services/seller_onboarding_usecase.service"
 
+function savedAsSeven(m: MerchantEntity): MerchantEntity {
+  return new MerchantEntity(
+    7,
+    m.userId,
+    m.storeName,
+    m.slug,
+    m.businessRegistrationNumber,
+    m.taxId,
+    m.status,
+    m.description,
+    m.verifiedAt
+  )
+}
+
 describe("SellerOnboardingUsecaseService Unit Tests", () => {
   let service: SellerOnboardingUsecaseService
   let mockVerificationRepo: any
@@ -22,6 +36,7 @@ describe("SellerOnboardingUsecaseService Unit Tests", () => {
       findByEmail: jest.fn(),
       save: jest.fn().mockImplementation(async (u: UserEntity) => u)
     }
+
     mockPrincipalResolver = {
       resolveOrMintForUser: jest.fn().mockResolvedValue("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
       syncKind: jest.fn().mockResolvedValue(undefined),
@@ -119,9 +134,7 @@ describe("SellerOnboardingUsecaseService Unit Tests", () => {
     mockVerificationRepo.findByUserId.mockResolvedValue(pending())
     mockVerificationRepo.save.mockImplementation(async (v: MerchantVerificationEntity) => v)
     mockMerchantRepo.findByUserId.mockResolvedValue(null)
-    mockMerchantRepo.save.mockImplementation(async (m: MerchantEntity) => new MerchantEntity(
-      7, m.userId, m.storeName, m.slug, m.businessRegistrationNumber, m.taxId, m.status, m.description, m.verifiedAt
-    ))
+    mockMerchantRepo.save.mockImplementation(async (m: MerchantEntity) => savedAsSeven(m))
 
     const approved = await service.approveVerification(1)
 
@@ -133,9 +146,7 @@ describe("SellerOnboardingUsecaseService Unit Tests", () => {
     mockVerificationRepo.findByUserId.mockResolvedValue(pending())
     mockVerificationRepo.save.mockImplementation(async (v: MerchantVerificationEntity) => v)
     mockMerchantRepo.findByUserId.mockResolvedValue(null)
-    mockMerchantRepo.save.mockImplementation(async (m: MerchantEntity) => new MerchantEntity(
-      7, m.userId, m.storeName, m.slug, m.businessRegistrationNumber, m.taxId, m.status, m.description, m.verifiedAt
-    ))
+    mockMerchantRepo.save.mockImplementation(async (m: MerchantEntity) => savedAsSeven(m))
 
     const approved = await service.approveVerification(1)
 
@@ -147,9 +158,7 @@ describe("SellerOnboardingUsecaseService Unit Tests", () => {
     mockVerificationRepo.findByUserId.mockResolvedValue(pending())
     mockVerificationRepo.save.mockImplementation(async (v: MerchantVerificationEntity) => v)
     mockMerchantRepo.findByUserId.mockResolvedValue(null)
-    mockMerchantRepo.save.mockImplementation(async (m: MerchantEntity) => new MerchantEntity(
-      7, m.userId, m.storeName, m.slug, m.businessRegistrationNumber, m.taxId, m.status, m.description, m.verifiedAt
-    ))
+    mockMerchantRepo.save.mockImplementation(async (m: MerchantEntity) => savedAsSeven(m))
 
     await service.approveVerification(1)
 
@@ -162,9 +171,7 @@ describe("SellerOnboardingUsecaseService Unit Tests", () => {
     mockVerificationRepo.findByUserId.mockResolvedValue(pending())
     mockVerificationRepo.save.mockImplementation(async (v: MerchantVerificationEntity) => v)
     mockMerchantRepo.findByUserId.mockResolvedValue(null)
-    mockMerchantRepo.save.mockImplementation(async (m: MerchantEntity) => new MerchantEntity(
-      7, m.userId, m.storeName, m.slug, m.businessRegistrationNumber, m.taxId, m.status, m.description, m.verifiedAt
-    ))
+    mockMerchantRepo.save.mockImplementation(async (m: MerchantEntity) => savedAsSeven(m))
 
     await service.approveVerification(1)
 
@@ -180,9 +187,7 @@ describe("SellerOnboardingUsecaseService Unit Tests", () => {
     mockVerificationRepo.findByUserId.mockResolvedValue(verification)
     mockVerificationRepo.save.mockImplementation(async (v: MerchantVerificationEntity) => v)
     mockMerchantRepo.findByUserId.mockResolvedValue(null)
-    mockMerchantRepo.save.mockImplementation(async (m: MerchantEntity) => new MerchantEntity(
-      7, m.userId, m.storeName, m.slug, m.businessRegistrationNumber, m.taxId, m.status, m.description, m.verifiedAt
-    ))
+    mockMerchantRepo.save.mockImplementation(async (m: MerchantEntity) => savedAsSeven(m))
     mockPrincipalResolver.registerAlias.mockRejectedValue(new Error("alias collision"))
 
     await expect(service.approveVerification(1)).rejects.toThrow("alias collision")
@@ -196,6 +201,7 @@ describe("SellerOnboardingUsecaseService Unit Tests", () => {
     mockMerchantRepo.findBySlug.mockResolvedValue(
       new MerchantEntity(99, 42, "Kinetix Store", "kinetix-store", "R", "T", "verified", "", new Date())
     )
+
     mockMerchantRepo.save.mockImplementation(async (m: MerchantEntity) => m)
 
     const approved = await service.approveVerification(1)

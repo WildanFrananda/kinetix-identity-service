@@ -5,6 +5,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number = GRPC_TIMEOUT_MS
   const deadline = new Promise<T>((_, reject) => {
     timer = setTimeout(() => reject(new Error(`gRPC database execution timed out after ${timeoutMs}ms`)), timeoutMs)
   })
+
   return Promise.race([promise, deadline]).finally(() => clearTimeout(timer))
 }
 

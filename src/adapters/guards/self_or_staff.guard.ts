@@ -1,4 +1,11 @@
-import { applyDecorators, CanActivate, ExecutionContext, ForbiddenException, Injectable, SetMetadata } from "@nestjs/common"
+import {
+  applyDecorators,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+  SetMetadata
+} from "@nestjs/common"
 import { Reflector } from "@nestjs/core"
 import type { AuthenticatedRequest } from "../../types/request.type"
 
