@@ -5,11 +5,13 @@ import type {
   ServerInterceptor
 } from "@grpc/grpc-js/build/src/server-interceptors"
 import type { ServerMethodDefinition } from "@grpc/grpc-js/build/src/make-client"
+import type { PeerAllowList } from "../../types/peer_allow_list.type"
+import { names, parsePeerAllowList, permits, summarise } from "./peer_allow_list"
 import { peerService } from "./spiffe"
 
 const logger = new Logger("PeerAuthorization")
 
-function peerAuthorizationInterceptor(allowed: ReadonlySet<string>): ServerInterceptor {
+function peerAuthorizationInterceptor(allowed: PeerAllowList): ServerInterceptor {
   return (
     methodDescriptor: ServerMethodDefinition<unknown, unknown>,
     call: ServerInterceptingCallInterface
@@ -22,9 +24,14 @@ function peerAuthorizationInterceptor(allowed: ReadonlySet<string>): ServerInter
       return refuse(call, status.UNAUTHENTICATED, "a client certificate carrying a SPIFFE id is required")
     }
 
-    if (!allowed.has(service)) {
+    if (!names(allowed, service)) {
       logger.warn(`refused a gRPC call to ${method} from ${service}, which is not on the allow list`)
       return refuse(call, status.PERMISSION_DENIED, `service '${service}' may not call this server`)
+    }
+
+    if (!permits(allowed, service, method)) {
+      logger.warn(`refused a gRPC call to ${method} from ${service}, which is not permitted that method`)
+      return refuse(call, status.PERMISSION_DENIED, `service '${service}' may not call ${method}`)
     }
 
     return new ServerInterceptingCall(call)
@@ -47,23 +54,17 @@ function refuse(
   })
 }
 
-function allowedCallers(): ReadonlySet<string> {
-  const raw = process.env.GRPC_ALLOWED_CALLERS ?? ""
-  const allowed = new Set(
-    raw
-      .split(",")
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0)
-  )
+function allowedCallers(): PeerAllowList {
+  const allowed = parsePeerAllowList(process.env.GRPC_ALLOWED_CALLERS ?? "")
 
-  if (allowed.size === 0) {
+  if (allowed.grants.size === 0) {
     throw new Error(
       "GRPC_ALLOWED_CALLERS is empty. Name the services permitted to call this server, or the " +
         "gRPC surface is unreachable."
     )
   }
 
-  logger.log(`gRPC callers allowed on this server: ${[...allowed].join(", ")}`)
+  logger.log(`gRPC callers allowed on this server: ${summarise(allowed)}`)
   return allowed
 }
 

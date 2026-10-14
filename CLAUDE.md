@@ -39,3 +39,21 @@ The runtime stage copies `node_modules` from a `deps` stage that runs `bun insta
 CLI and TypeScript shipped to production; on 2026-10-11 the image scan failed on two critical handlebars
 CVEs that reached the image only through ts-jest. Every module `dist/` requires is in `dependencies`; a
 package the running service needs belongs there, not in `devDependencies`.
+
+## Each caller reaches only the RPCs it makes
+
+`GRPC_ALLOWED_CALLERS` takes `peer`, `peer@package.Service` or `peer@package.Service/Method`
+(`src/infrastructure/mesh/peer_allow_list.ts`). Until 2026-10-14 it took service names only, so every
+service on the list could call every RPC: search, which only walks `MerchantsChangedSince`, could read
+any user's email, phone and street address through `GetUserProfile`, a merchant's tax id through
+`GetMerchantInfo`, and enumerate principals through `ResolvePrincipal`. Order had the same gap and was
+fixed the day before.
+
+Infra grants each caller what its code calls: order `ResolvePrincipal` (the principal backfill),
+`GetMerchantInfo` and `GetUserProfile`; warehouse, catalog and pricing `GetMerchantInfo`; notification
+`GetUserProfile`; search `MerchantsChangedSince`. Nobody is granted `ValidateToken` or `GetPrincipal`,
+because nothing calls them, and nobody reaches `geo.v1.GeocodingService`. A listed caller keeps
+reflection, which the mesh probes use; a bare name still means every method, so the old list parses.
+
+Release order: identity first (the new parser reads the old list), then the infra list, then identity
+again at its live digest so the container picks the list up.
