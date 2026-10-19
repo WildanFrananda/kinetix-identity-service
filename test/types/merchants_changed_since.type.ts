@@ -4,10 +4,16 @@ type Ask = {
   limit: number
 }
 
+type AfterAsk = {
+  transactionId: string
+  lastId: number
+  limit: number
+}
+
 type AliasRow = {
   principalId: string
   service: string
   localId: string
 }
 
-export type { AliasRow, Ask }
+export type { AfterAsk, AliasRow, Ask }

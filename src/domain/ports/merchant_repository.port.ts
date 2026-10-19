@@ -10,6 +10,11 @@ interface MerchantRepositoryPort {
     lastId: number,
     limit: number
   ): Promise<MerchantChangePage>
+  findChangedAfter(
+    transactionId: string,
+    lastId: number,
+    limit: number
+  ): Promise<MerchantChangePage>
   save(merchant: MerchantEntity): Promise<MerchantEntity>
 }
 

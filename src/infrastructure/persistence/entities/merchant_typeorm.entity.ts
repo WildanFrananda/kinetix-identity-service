@@ -1,8 +1,22 @@
-import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm"
+import {
+  Check,
+  Column,
+  CreateDateColumn,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn
+} from "typeorm"
 
 import UserTypeormEntity from "./user_typeorm.entity"
 
 @Entity("merchants")
+@Check(
+  "CK_merchants_point_on_earth",
+  '("latitude" IS NULL AND "longitude" IS NULL) ' +
+    'OR ("latitude" BETWEEN -90 AND 90 AND "longitude" BETWEEN -180 AND 180)'
+)
 class MerchantTypeormEntity {
   @PrimaryGeneratedColumn()
   id!: number

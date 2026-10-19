@@ -13,6 +13,8 @@ import type {
   GetPrincipalResponse,
   GetUserProfileRequest,
   GetUserProfileResponse,
+  MerchantCursorInput,
+  MerchantCursorView,
   MerchantRecordView,
   MerchantsChangedSinceRequest,
   MerchantsChangedSinceResponse,
@@ -24,6 +26,7 @@ import type {
 import { principalKindOf } from "../mappers/principal_kind.mapper"
 import { merchantStatusOf } from "../mappers/merchant_status.mapper"
 import { fromProtoTimestamp, toProtoTimestamp } from "../mappers/proto_timestamp.mapper"
+import { fromProtoTransactionId } from "../mappers/proto_transaction_id.mapper"
 import { withTimeout } from "../../infrastructure/persistence/with_timeout"
 import UserProfileUsecaseService from "../../application/services/user_profile_usecase.service"
 import UserRepositoryPort from "../../domain/ports/user_repository.port"
@@ -31,6 +34,7 @@ import MerchantRepositoryPort from "../../domain/ports/merchant_repository.port"
 import ProfileEntity from "../../domain/entities/profile.entity"
 import UserEntity from "../../domain/entities/user.entity"
 import MerchantEntity from "../../domain/entities/merchant.entity"
+import MerchantChange from "../../domain/entities/merchant_change.entity"
 import { maySell } from "../../domain/merchant_standing"
 
 import { MERCHANT_ALIAS_SERVICE } from "../../application/services/seller_onboarding_usecase.service"
@@ -45,6 +49,13 @@ function merchantPageLimitOf(requested: number | undefined): number {
   }
 
   return Math.min(Math.floor(requested), MERCHANT_PAGE_MAX)
+}
+
+function latestOf(changes: MerchantChange[]): Date {
+  return changes.reduce(
+    (latest, change) => (change.updatedAt > latest ? change.updatedAt : latest),
+    changes[0].updatedAt
+  )
 }
 
 @Controller()
@@ -257,11 +268,14 @@ class IdentityGrpcController {
     const cursor = data.cursor ?? null
     const updatedThrough = fromProtoTimestamp(cursor?.updated_through ?? cursor?.updatedThrough)
     const lastPrincipalId = cursor?.last_principal_id ?? cursor?.lastPrincipalId ?? ""
+    const transactionId = this.transactionIdOf(cursor)
     const limit = merchantPageLimitOf(data.limit)
 
     const lastId = await this.merchantIdOf(lastPrincipalId)
     const page = await withTimeout(
-      this.merchantRepository.findChangedSince(updatedThrough, lastId, limit)
+      transactionId === null
+        ? this.merchantRepository.findChangedSince(updatedThrough, lastId, limit)
+        : this.merchantRepository.findChangedAfter(transactionId, lastId, limit)
     )
 
     const principalIds = await this.principalIdsOf(page.changes.map((change) => change.merchant.id))
@@ -284,20 +298,38 @@ class IdentityGrpcController {
     })
 
     const last = page.changes.at(-1)
+    const next: MerchantCursorView = last
+      ? {
+          updated_through: toProtoTimestamp(
+            transactionId === null ? last.updatedAt : latestOf(page.changes)
+          ),
+          last_principal_id: upserted[upserted.length - 1].principal_id
+        }
+      : {
+          updated_through: updatedThrough ? toProtoTimestamp(updatedThrough) : null,
+          last_principal_id: lastPrincipalId
+        }
+
+    if (transactionId !== null) {
+      next.transaction_id = page.lastTransactionId ?? transactionId
+    }
 
     return {
       upserted,
       removed_principal_ids: [],
-      next: last
-        ? {
-            updated_through: toProtoTimestamp(last.updatedAt),
-            last_principal_id: upserted[upserted.length - 1].principal_id
-          }
-        : {
-            updated_through: updatedThrough ? toProtoTimestamp(updatedThrough) : null,
-            last_principal_id: lastPrincipalId
-          },
+      next,
       has_more: page.hasMore
+    }
+  }
+
+  private transactionIdOf(cursor: MerchantCursorInput | null): string | null {
+    try {
+      return fromProtoTransactionId(cursor?.transaction_id ?? cursor?.transactionId)
+    } catch (cause) {
+      throw new RpcException({
+        code: status.INVALID_ARGUMENT,
+        message: cause instanceof Error ? cause.message : String(cause)
+      })
     }
   }
 

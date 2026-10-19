@@ -1,4 +1,13 @@
-import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn, Unique } from "typeorm"
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+  Unique
+} from "typeorm"
 
 import PrincipalTypeormEntity from "./principal_typeorm.entity"
 
@@ -13,7 +22,7 @@ class PrincipalAliasTypeormEntity {
   principalId!: string
 
   @ManyToOne(() => PrincipalTypeormEntity, { onDelete: "CASCADE", nullable: false })
-  @JoinColumn({ name: "principalId" })
+  @JoinColumn({ name: "principalId", foreignKeyConstraintName: "FK_principal_aliases_principal" })
   principal?: PrincipalTypeormEntity
 
   @Column({ type: "varchar", length: 32 })

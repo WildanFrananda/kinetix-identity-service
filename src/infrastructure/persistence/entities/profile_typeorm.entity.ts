@@ -1,8 +1,24 @@
-import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm"
+import {
+  Check,
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn
+} from "typeorm"
 
 import UserTypeormEntity from "./user_typeorm.entity"
 
 @Entity("profiles")
+@Index("ix_profiles_created", ["createdAt"])
+@Check(
+  "CK_profiles_point_on_earth",
+  '("latitude" IS NULL AND "longitude" IS NULL) ' +
+    'OR ("latitude" BETWEEN -90 AND 90 AND "longitude" BETWEEN -180 AND 180)'
+)
 class ProfileTypeormEntity {
   @PrimaryGeneratedColumn()
   id!: number
