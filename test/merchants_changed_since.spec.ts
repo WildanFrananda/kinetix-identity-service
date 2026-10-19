@@ -5,7 +5,7 @@ import MerchantChangePage from "../src/domain/entities/merchant_change_page.enti
 import MerchantRepositoryPort from "../src/domain/ports/merchant_repository.port"
 import { MERCHANT_ALIAS_SERVICE } from "../src/application/services/seller_onboarding_usecase.service"
 import { fromProtoTimestamp, toProtoTimestamp } from "../src/adapters/mappers/proto_timestamp.mapper"
-import type { AliasRow, Ask } from "./types/merchants_changed_since.type"
+import type { AfterAsk, AliasRow, Ask } from "./types/merchants_changed_since.type"
 
 const NOON = new Date("2026-09-22T12:00:00.000Z")
 const LATER = new Date("2026-09-22T12:05:00.000Z")
@@ -16,6 +16,7 @@ function merchant(id: number, storeName: string, status: MerchantEntity["status"
 
 class FakeMerchantRepository implements MerchantRepositoryPort {
   asks: Ask[] = []
+  afterAsks: AfterAsk[] = []
   page = new MerchantChangePage([], false)
 
   async findById(): Promise<MerchantEntity | null> {
@@ -36,6 +37,16 @@ class FakeMerchantRepository implements MerchantRepositoryPort {
     limit: number
   ): Promise<MerchantChangePage> {
     this.asks.push({ updatedThrough, lastId, limit })
+
+    return this.page
+  }
+
+  async findChangedAfter(
+    transactionId: string,
+    lastId: number,
+    limit: number
+  ): Promise<MerchantChangePage> {
+    this.afterAsks.push({ transactionId, lastId, limit })
 
     return this.page
   }
@@ -233,6 +244,106 @@ describe("the merchant change feed", () => {
     expect(response.has_more).toBe(false)
     expect(response.next.last_principal_id).toBe("p-9")
     expect(fromProtoTimestamp(response.next.updated_through)).toEqual(NOON)
+  })
+})
+
+describe("the merchant change feed read by transaction", () => {
+  it("reads by transaction when the cursor names one, zero included", async () => {
+    const repository = new FakeMerchantRepository()
+    const controller = controllerWith(
+      repository,
+      [
+        { principalId: "p-7", service: MERCHANT_ALIAS_SERVICE, localId: "7" }
+      ]
+    )
+
+    await controller.merchantsChangedSince({ cursor: { transaction_id: 0, last_principal_id: "p-7" } })
+
+    expect(repository.asks).toEqual([])
+    expect(repository.afterAsks).toEqual([{ transactionId: "0", lastId: 7, limit: 100 }])
+  })
+
+  it("reads a transaction that arrives as a long or a string", async () => {
+    const repository = new FakeMerchantRepository()
+    const controller = controllerWith(repository, [])
+
+    await controller.merchantsChangedSince({ cursor: { transaction_id: { toString: () => "9007199254740993" } } })
+    await controller.merchantsChangedSince({ cursor: { transactionId: "18446744073709551615" } })
+
+    expect(repository.afterAsks.map((ask) => ask.transactionId)).toEqual([
+      "9007199254740993",
+      "18446744073709551615"
+    ])
+  })
+
+  it("refuses a transaction that is not an unsigned 64-bit number", async () => {
+    const repository = new FakeMerchantRepository()
+    const controller = controllerWith(repository, [])
+
+    await expect(
+      controller.merchantsChangedSince({ cursor: { transaction_id: "18446744073709551616" } })
+    ).rejects.toMatchObject({ error: { code: 3 } })
+    await expect(
+      controller.merchantsChangedSince({ cursor: { transaction_id: "-1" } })
+    ).rejects.toMatchObject({ error: { code: 3 } })
+    expect(repository.afterAsks).toEqual([])
+  })
+
+  it("hands back the page's last transaction and the latest change it saw", async () => {
+    const repository = new FakeMerchantRepository()
+    repository.page = new MerchantChangePage(
+      [
+        new MerchantChange(merchant(1, "Satu", "verified"), LATER),
+        new MerchantChange(merchant(2, "Dua", "verified"), NOON)
+      ],
+      true,
+      "812"
+    )
+    const controller = controllerWith(
+      repository,
+      [
+        { principalId: "p-1", service: MERCHANT_ALIAS_SERVICE, localId: "1" },
+        { principalId: "p-2", service: MERCHANT_ALIAS_SERVICE, localId: "2" }
+      ]
+    )
+
+    const response = await controller.merchantsChangedSince({ cursor: { transaction_id: "700" } })
+
+    expect(response.next.transaction_id).toBe("812")
+    expect(response.next.last_principal_id).toBe("p-2")
+    expect(fromProtoTimestamp(response.next.updated_through)).toEqual(LATER)
+    expect(response.has_more).toBe(true)
+  })
+
+  it("gives the caller's transaction back when nothing changed", async () => {
+    const repository = new FakeMerchantRepository()
+    repository.page = new MerchantChangePage([], false, "700")
+    const controller = controllerWith(
+      repository,
+      [
+        { principalId: "p-9", service: MERCHANT_ALIAS_SERVICE, localId: "9" }
+      ]
+    )
+
+    const response = await controller.merchantsChangedSince({
+      cursor: { transaction_id: "700", last_principal_id: "p-9" }
+    })
+
+    expect(response.next.transaction_id).toBe("700")
+    expect(response.next.last_principal_id).toBe("p-9")
+  })
+
+  it("answers a cursor without a transaction the old way, with no transaction in it", async () => {
+    const repository = new FakeMerchantRepository()
+    const controller = controllerWith(repository, [])
+
+    const response = await controller.merchantsChangedSince({
+      cursor: { updated_through: toProtoTimestamp(NOON) }
+    })
+
+    expect(repository.afterAsks).toEqual([])
+    expect(repository.asks).toHaveLength(1)
+    expect(response.next.transaction_id).toBeUndefined()
   })
 })
 

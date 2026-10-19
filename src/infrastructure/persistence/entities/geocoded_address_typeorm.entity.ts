@@ -1,11 +1,23 @@
-import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm"
+import {
+  Check,
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn
+} from "typeorm"
 
 @Entity("geocoded_addresses")
+@Index("UQ_geocoded_addresses_query", ["query"], { unique: true })
+@Check(
+  "CK_geocoded_addresses_on_earth",
+  '"latitude" BETWEEN -90 AND 90 AND "longitude" BETWEEN -180 AND 180'
+)
 class GeocodedAddressTypeormEntity {
   @PrimaryGeneratedColumn()
   id!: number
 
-  @Index({ unique: true })
   @Column({ type: "text" })
   query!: string
 

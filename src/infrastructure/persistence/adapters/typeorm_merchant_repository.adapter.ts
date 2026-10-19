@@ -91,6 +91,36 @@ class TypeormMerchantRepositoryAdapter implements MerchantRepositoryPort {
     )
   }
 
+  async findChangedAfter(
+    transactionId: string,
+    lastId: number,
+    limit: number
+  ): Promise<MerchantChangePage> {
+    const { entities, raw } = await this.repo
+      .createQueryBuilder("merchant")
+      .innerJoin("merchant_change_feed", "feed", "feed.merchant_id = merchant.id")
+      .addSelect("feed.change_transaction_id::text", "change_transaction")
+      .where("feed.change_transaction_id < pg_snapshot_xmin(pg_current_snapshot())")
+      .andWhere(
+        "(feed.change_transaction_id, merchant.id) > (CAST(:transactionId AS xid8), :lastId)",
+        { transactionId, lastId }
+      )
+      .orderBy("feed.change_transaction_id", "ASC")
+      .addOrderBy("merchant.id", "ASC")
+      .limit(limit + 1)
+      .getRawAndEntities<{ change_transaction: string }>()
+
+    const hasMore = entities.length > limit
+    const page = hasMore ? entities.slice(0, limit) : entities
+    const last = page.length > 0 ? raw[page.length - 1].change_transaction : transactionId
+
+    return new MerchantChangePage(
+      page.map((record) => new MerchantChange(this.toEntity(record), record.updatedAt)),
+      hasMore,
+      last
+    )
+  }
+
   async save(merchant: MerchantEntity): Promise<MerchantEntity> {
     const entity = this.repo.create({
       id: merchant.id > 0 ? merchant.id : undefined,
@@ -101,8 +131,7 @@ class TypeormMerchantRepositoryAdapter implements MerchantRepositoryPort {
       businessRegistrationNumber: merchant.businessRegistrationNumber,
       taxId: merchant.taxId,
       status: merchant.status,
-      verifiedAt: merchant.verifiedAt
-    ,
+      verifiedAt: merchant.verifiedAt,
       streetAddress: merchant.streetAddress,
       city: merchant.city,
       postalCode: merchant.postalCode,

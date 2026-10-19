@@ -94,16 +94,21 @@ type ProtoTimestamp = {
   nanos: number
 }
 
+type ProtoTransactionIdInput = number | string | { toString(): string }
+
 type MerchantCursorInput = {
   updated_through?: ProtoTimestampInput | null
   updatedThrough?: ProtoTimestampInput | null
   last_principal_id?: string
   lastPrincipalId?: string
+  transaction_id?: ProtoTransactionIdInput | null
+  transactionId?: ProtoTransactionIdInput | null
 }
 
 type MerchantCursorView = {
   updated_through: ProtoTimestamp | null
   last_principal_id: string
+  transaction_id?: string
 }
 
 type MerchantRecordView = {
@@ -148,6 +153,7 @@ export type {
   MerchantsChangedSinceResponse,
   ProtoTimestamp,
   ProtoTimestampInput,
+  ProtoTransactionIdInput,
   PrincipalKind,
   GetMerchantInfoResponse,
   GetPrincipalRequest,

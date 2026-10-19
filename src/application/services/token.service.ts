@@ -257,8 +257,14 @@ class TokenService {
   }
 
   private verifySignature(token: string): jwt.JwtPayload {
+    const header = jwt.decode(token, { complete: true })?.header
+    const key = this.keys.verificationKey(header?.kid)
+    if (!key) {
+      throw new UnauthorizedException("Invalid token")
+    }
+
     try {
-      const claims = jwt.verify(token, this.keys.publicKey, {
+      const claims = jwt.verify(token, key, {
         algorithms: ["RS256"],
         issuer: this.issuer,
         audience: this.audience

@@ -6,19 +6,22 @@ import JwtKeyProvider from "../src/infrastructure/crypto/jwt_key_provider"
 const ISSUER = "https://identity.kinetix.test"
 const AUDIENCE = "kinetix"
 
-function makeKeyProvider(pem?: string): JwtKeyProvider {
-  const key =
-    pem ??
-    generateKeyPairSync("rsa", {
-      modulusLength: 2048,
-      privateKeyEncoding: { type: "pkcs8", format: "pem" },
-      publicKeyEncoding: { type: "spki", format: "pem" }
-    }).privateKey
+function makeKeyPair(modulusLength = 2048): { privateKey: string; publicKey: string } {
+  return generateKeyPairSync("rsa", {
+    modulusLength,
+    privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    publicKeyEncoding: { type: "spki", format: "pem" }
+  })
+}
 
-  const config = {
-    get: (name: string) =>
-      name === "KINETIX_IDENTITY_JWT_PRIVATE_KEY_B64" ? Buffer.from(key).toString("base64") : undefined
-  } as any
+function makeKeyProvider(pem?: string, previous?: string): JwtKeyProvider {
+  const key = pem ?? makeKeyPair().privateKey
+  const settings: Record<string, string | undefined> = {
+    KINETIX_IDENTITY_JWT_PRIVATE_KEY_B64: Buffer.from(key).toString("base64"),
+    KINETIX_IDENTITY_JWT_PREVIOUS_PUBLIC_KEYS_B64:
+      previous === undefined ? undefined : Buffer.from(previous).toString("base64")
+  }
+  const config = { get: (name: string) => settings[name] } as any
 
   return new JwtKeyProvider(config)
 }
@@ -121,13 +124,106 @@ describe("TokenService — minting", () => {
   })
 
   it("refuses a key that is too small for RS256", () => {
-    const weak = generateKeyPairSync("rsa", {
-      modulusLength: 1024,
-      privateKeyEncoding: { type: "pkcs8", format: "pem" },
-      publicKeyEncoding: { type: "spki", format: "pem" }
-    }).privateKey
+    const weak = makeKeyPair(1024).privateKey
 
     expect(() => makeKeyProvider(weak)).toThrow(/1024-bit/)
+  })
+})
+
+describe("TokenService — a rotated signing key", () => {
+  const retired = makeKeyPair()
+  const older = makeKeyPair()
+  const current = makeKeyPair()
+
+  function before() {
+    return makeService({}, makeKeyProvider(retired.privateKey))
+  }
+
+  function after() {
+    return makeService({}, makeKeyProvider(current.privateKey, `${retired.publicKey}${older.publicKey}`))
+  }
+
+  it("publishes the signing key first, then every previous key", () => {
+    const { keys } = after()
+    const previous = makeKeyProvider(retired.privateKey).kid
+
+    const published = keys.jwks().keys
+
+    expect(published.map((key) => key.kid)).toEqual([keys.kid, previous, makeKeyProvider(older.privateKey).kid])
+    expect(published.every((key) => key.use === "sig" && key.alg === "RS256" && key.kty === "RSA")).toBe(true)
+    expect(published.some((key) => "d" in key)).toBe(false)
+  })
+
+  it("signs new tokens with the current key only", async () => {
+    const { service, keys } = after()
+    const pair = await service.issuePair(USER, PRINCIPAL)
+
+    expect(jwt.decode(pair.accessToken, { complete: true })?.header.kid).toBe(keys.kid)
+    expect(jwt.decode(pair.refreshToken, { complete: true })?.header.kid).toBe(keys.kid)
+  })
+
+  it("still accepts a token the previous key signed", async () => {
+    const pair = await before().service.issuePair(USER, PRINCIPAL)
+
+    const claims = await after().service.verifyAccess(pair.accessToken)
+
+    expect(claims.sub).toBe(PRINCIPAL)
+  })
+
+  it("rejects a token signed by a key it no longer publishes", async () => {
+    const pair = await before().service.issuePair(USER, PRINCIPAL)
+    const { service } = makeService({}, makeKeyProvider(current.privateKey, older.publicKey))
+
+    await expect(service.verifyAccess(pair.accessToken)).rejects.toThrow("Invalid token")
+  })
+
+  it("rejects a token that names a published key but was signed by another", async () => {
+    const { service, keys } = after()
+    const claims = {
+      sub: PRINCIPAL,
+      jti: randomUUID(),
+      token_use: "access",
+      uid: 42
+    }
+    const forged = jwt.sign(claims, makeKeyPair().privateKey, {
+      algorithm: "RS256",
+      keyid: keys.kid,
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      expiresIn: 900
+    })
+
+    await expect(service.verifyAccess(forged)).rejects.toThrow("Invalid token")
+  })
+
+  it("rejects a token that names no key", async () => {
+    const { service } = after()
+    const claims = {
+      sub: PRINCIPAL,
+      jti: randomUUID(),
+      token_use: "access",
+      uid: 42
+    }
+    const unnamed = jwt.sign(claims, current.privateKey, {
+      algorithm: "RS256",
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      expiresIn: 900
+    })
+
+    await expect(service.verifyAccess(unnamed)).rejects.toThrow("Invalid token")
+  })
+
+  it("refuses to start when a previous key is the signing key", () => {
+    expect(() => makeKeyProvider(current.privateKey, current.publicKey)).toThrow(/is the current one/)
+  })
+
+  it("refuses to start when the previous keys hold no public key", () => {
+    expect(() => makeKeyProvider(current.privateKey, retired.privateKey)).toThrow(/holds no PEM public key/)
+  })
+
+  it("refuses to start when a previous key is too small", () => {
+    expect(() => makeKeyProvider(current.privateKey, makeKeyPair(1024).publicKey)).toThrow(/at least 2048 bits/)
   })
 })
 
@@ -288,7 +384,7 @@ describe("TokenService — rotation", () => {
     const orphan = jwt.sign(
       { sub: PRINCIPAL, jti: randomUUID(), token_use: "refresh", fam: randomUUID(), uid: 42 },
       keys.privateKey,
-      { algorithm: "RS256", issuer: ISSUER, audience: AUDIENCE, expiresIn: 3600 }
+      { algorithm: "RS256", keyid: keys.kid, issuer: ISSUER, audience: AUDIENCE, expiresIn: 3600 }
     )
 
     await expect(service.rotate(orphan, USER)).rejects.toThrow("not recognised")

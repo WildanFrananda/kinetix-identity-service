@@ -1,4 +1,14 @@
-import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from "typeorm"
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn
+} from "typeorm"
+
+import PrincipalTypeormEntity from "./principal_typeorm.entity"
 
 @Entity("refresh_tokens")
 @Index("ix_refresh_tokens_family", ["familyId"])
@@ -15,6 +25,10 @@ class RefreshTokenTypeormEntity {
 
   @Column({ type: "uuid" })
   principalId!: string
+
+  @ManyToOne(() => PrincipalTypeormEntity, { onDelete: "CASCADE", nullable: false })
+  @JoinColumn({ name: "principalId", foreignKeyConstraintName: "FK_refresh_tokens_principal" })
+  principal?: PrincipalTypeormEntity
 
   @Column({ type: "int" })
   userId!: number

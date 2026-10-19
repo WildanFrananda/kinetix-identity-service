@@ -77,8 +77,10 @@ describe("the contracts this service serves", () => {
 
     expect(cursor.type.field.map((field) => field.name)).toEqual([
       "updated_through",
-      "last_principal_id"
+      "last_principal_id",
+      "transaction_id"
     ])
+    expect(cursor.type.field.find((field) => field.name === "transaction_id")?.type).toBe("TYPE_UINT64")
     expect(record.type.field.map((field) => field.name)).toEqual([
       "principal_id",
       "store_name",
