@@ -101,3 +101,8 @@ against: the entities did not declare the three `CK_*_on_earth` checks, the name
 `ix_profiles_created`, or `UQ_geocoded_addresses_query`, all of which migrations had made. A generate run against
 a migrated database proposed dropping every one. The entities now carry them by name, and a constraint added in a
 migration is declared on its entity in the same change.
+
+The gate runs the CLI as `bunx --bun typeorm`. GitHub's runner has Node, `bunx` follows the CLI's `node` shebang,
+and Node cannot load `src/data-source.ts` (its migration imports carry no extension), so without `--bun` the
+command fails before it compares anything. That failure is what the old gate reported as "no drift" on every run;
+the first run of the hardened gate (39192414868) showed it. GitLab's job runs in `oven/bun`, which has no Node.

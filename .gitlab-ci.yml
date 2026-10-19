@@ -86,9 +86,10 @@ migrations:
     # The drift gate. `migration:generate` exits non-zero with "No changes in database schema
     # were found" when entities and schema agree — so a SUCCESSFUL generate means someone
     # changed an entity without writing the migration. Any other failure is not "no drift" and
-    # fails too; until 2026-10-19 it passed.
+    # fails too; until 2026-10-19 it passed. `--bun` keeps the CLI on Bun wherever Node is also
+    # installed, as it is on GitHub's runner, where Node cannot load `src/data-source.ts`.
     - |
-      if output="$(bunx typeorm migration:generate -d src/data-source.ts src/migrations/DriftCheck 2>&1)"; then
+      if output="$(bunx --bun typeorm migration:generate -d src/data-source.ts src/migrations/DriftCheck 2>&1)"; then
         echo "entities have drifted: a migration was generated that is not committed"
         cat src/migrations/*DriftCheck.ts
         exit 1

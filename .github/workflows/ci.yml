@@ -93,9 +93,11 @@ jobs:
       # someone changed an entity without writing the migration. Any other failure (no database,
       # a data source that does not load) is not "no drift" and fails too; until 2026-10-19 it
       # passed, while the entities lacked three checks, two foreign keys and two indexes.
+      # `--bun` runs the CLI on Bun: the runner has Node, the CLI's shebang picks it, and Node cannot
+      # load `src/data-source.ts`. That load failure is what the gate used to read as "no drift".
       - name: Entities must not have drifted from the migrations
         run: |
-          if output="$(bunx typeorm migration:generate -d src/data-source.ts src/migrations/DriftCheck 2>&1)"; then
+          if output="$(bunx --bun typeorm migration:generate -d src/data-source.ts src/migrations/DriftCheck 2>&1)"; then
             echo "entities have drifted: a migration was generated that is not committed"
             cat src/migrations/*DriftCheck.ts
             exit 1
