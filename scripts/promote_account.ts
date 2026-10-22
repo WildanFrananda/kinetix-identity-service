@@ -20,8 +20,6 @@ function dsn(): string {
   }
   const host = process.env.IDENTITY_DB_HOST ?? process.env.DB_HOST ?? "kinetix-identity-db"
   const user = process.env.IDENTITY_DB_USERNAME ?? process.env.DB_USERNAME ?? "kinetix_identity_app"
-  // Production's database is kinetix_identity, in the shared cluster. The name comes from the same
-  // environment the service reads, so running this inside the identity container reaches that one.
   const database = process.env.IDENTITY_DB_DATABASE ?? process.env.DB_DATABASE ?? "kinetix_identity_dev"
   return `postgres://${user}:${encodeURIComponent(password)}@${host}:5432/${database}`
 }
@@ -46,7 +44,7 @@ async function main(): Promise<void> {
 
   try {
     const found = await client.query<{ id: number; role: string }>(
-      `SELECT id, role FROM users WHERE email = $1`,
+      `SELECT id, role FROM users WHERE lower(email) = lower($1)`,
       [email]
     )
     if (found.rowCount === 0) {

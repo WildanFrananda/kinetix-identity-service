@@ -13,8 +13,9 @@ type AuthenticatedAccount = {
   principalId: string
 }
 
-type LogoutBody = {
-  refreshToken?: string
+type Credentials = {
+  email: string
+  password: string
 }
 
-export type { AuthenticatedAccount, CurrentUserView, LogoutBody }
+export type { AuthenticatedAccount, Credentials, CurrentUserView }

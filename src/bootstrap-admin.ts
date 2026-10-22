@@ -1,16 +1,20 @@
 import * as bcrypt from "bcrypt"
 import dataSource from "./data-source"
+import { normalisedEmail } from "./domain/email_address"
 import UserTypeormEntity from "./infrastructure/persistence/entities/user_typeorm.entity"
 
 async function main(): Promise<void> {
-  const email = process.env.KINETIX_BOOTSTRAP_ADMIN_EMAIL
+  const configuredEmail = process.env.KINETIX_BOOTSTRAP_ADMIN_EMAIL
   const password = process.env.KINETIX_BOOTSTRAP_ADMIN_PASSWORD
-  if (!email || !password) {
+  if (!configuredEmail || !password) {
     throw new Error(
       "KINETIX_BOOTSTRAP_ADMIN_EMAIL and KINETIX_BOOTSTRAP_ADMIN_PASSWORD are both required " +
         "and have no defaults"
     )
   }
+
+  const email = normalisedEmail(configuredEmail)
+
   if (password.length < 12) {
     throw new Error("the bootstrap admin password must be at least 12 characters")
   }
@@ -28,7 +32,10 @@ async function main(): Promise<void> {
       return
     }
 
-    const taken = await users.findOne({ where: { email } })
+    const taken = await users
+      .createQueryBuilder("account")
+      .where("lower(account.email) = lower(:email)", { email })
+      .getOne()
     if (taken) {
       throw new Error(
         `${email} is already registered as ${taken.role}; choose an address that is not in use`

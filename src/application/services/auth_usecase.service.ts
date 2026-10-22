@@ -1,22 +1,28 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
-  UnauthorizedException
+  UnauthorizedException,
+  UnprocessableEntityException
 } from "@nestjs/common"
 import * as bcrypt from "bcrypt"
 import UserEntity from "../../domain/entities/user.entity"
+import { normalisedEmail } from "../../domain/email_address"
 import UserRepositoryPort from "../../domain/ports/user_repository.port"
 import LoginInputDto from "../dto/login_input.dto"
 import RegisterUserInputDto from "../dto/register_user_input.dto"
 import AuthTokenOutputDto from "../dto/auth_token_output.dto"
 import TokenService from "./token.service"
 import PrincipalResolverService from "./principal_resolver.service"
-import { generateSecret, otpauthUrl, verifyCode } from "../../infrastructure/crypto/totp"
+import { acceptedStep, generateSecret, otpauthUrl } from "../../infrastructure/crypto/totp"
+import type { Credentials } from "../../types/auth.type"
 import type { AccessClaims } from "../../types/token.type"
 import type { TwoFactorChallenge, TwoFactorSetup } from "../../types/two_factor.type"
+
+const UNKNOWN_ACCOUNT_HASH = "$2b$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidinv"
 
 @Injectable()
 class AuthUsecaseService {
@@ -28,16 +34,7 @@ class AuthUsecaseService {
   ) {}
 
   async login(dto: LoginInputDto): Promise<AuthTokenOutputDto | TwoFactorChallenge> {
-    const user: UserEntity | null = await this.userRepository.findByEmail(dto.email)
-    if (!user) {
-      await bcrypt.compare(dto.password, "$2b$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidinv")
-      throw new UnauthorizedException("Invalid email or password credentials")
-    }
-
-    const isPasswordValid: boolean = await bcrypt.compare(dto.password, user.passwordHash)
-    if (!isPasswordValid) {
-      throw new UnauthorizedException("Invalid email or password credentials")
-    }
+    const user: UserEntity = await this.verifyPassword(dto)
 
     if (user.isTwoFactorEnabled) {
       const principalId: string = await this.principalResolver.resolveOrMintForUser(user)
@@ -48,7 +45,22 @@ class AuthUsecaseService {
       return { mfaRequired: true, challengeToken: challenge.token, expiresIn: challenge.expiresIn }
     }
 
-    return await this.issueFor(user)
+    return await this.startSession(user)
+  }
+
+  async verifyPassword(credentials: Credentials): Promise<UserEntity> {
+    const user: UserEntity | null = await this.userRepository.findByEmail(normalisedEmail(credentials.email))
+    if (!user) {
+      await bcrypt.compare(credentials.password, UNKNOWN_ACCOUNT_HASH)
+      throw new UnauthorizedException("Invalid email or password credentials")
+    }
+
+    const isPasswordValid: boolean = await bcrypt.compare(credentials.password, user.passwordHash)
+    if (!isPasswordValid) {
+      throw new UnauthorizedException("Invalid email or password credentials")
+    }
+
+    return user
   }
 
   async verifyTwoFactor(challengeToken: string, code: string): Promise<AuthTokenOutputDto> {
@@ -62,15 +74,24 @@ class AuthUsecaseService {
       throw new UnauthorizedException("This account does not have two-factor authentication enabled")
     }
 
-    if (!verifyCode(user.twoFactorSecret, code)) {
+    const step: number | null = acceptedStep(user.twoFactorSecret, code)
+    if (step === null) {
       throw new UnauthorizedException("That code is not valid")
     }
 
-    return await this.issueFor(user)
+    await this.tokenService.consumeMfaChallenge(claims)
+
+    const fresh: boolean = await this.userRepository.acceptTwoFactorStep(user.id, step)
+    if (!fresh) {
+      throw new UnauthorizedException("That code has already been used; sign in again with the next one")
+    }
+
+    return await this.startSession(user)
   }
 
   async register(dto: RegisterUserInputDto): Promise<AuthTokenOutputDto> {
-    const existingUser: UserEntity | null = await this.userRepository.findByEmail(dto.email)
+    const email: string = normalisedEmail(dto.email)
+    const existingUser: UserEntity | null = await this.userRepository.findByEmail(email)
     if (existingUser) {
       throw new ConflictException("Email address is already registered")
     }
@@ -78,10 +99,10 @@ class AuthUsecaseService {
     const saltRounds: number = 10
     const passwordHash: string = await bcrypt.hash(dto.password, saltRounds)
 
-    const newUser = new UserEntity(0, dto.email, passwordHash, "customer")
+    const newUser = new UserEntity(0, email, passwordHash, "customer")
     const savedUser: UserEntity = await this.userRepository.save(newUser)
 
-    return await this.issueFor(savedUser)
+    return await this.startSession(savedUser)
   }
 
   async refresh(refreshToken: string): Promise<AuthTokenOutputDto> {
@@ -108,9 +129,14 @@ class AuthUsecaseService {
 
   async logout(claims: AccessClaims, refreshToken?: string): Promise<void> {
     let familyId: string | undefined
-    if (refreshToken) {
-      familyId = this.tokenService.peekRefresh(refreshToken).fam
+    if (refreshToken !== undefined) {
+      const refresh = this.tokenService.peekRefresh(refreshToken)
+      if (refresh.sub !== claims.sub) {
+        throw new ForbiddenException("That refresh token belongs to another account")
+      }
+      familyId = refresh.fam
     }
+
     await this.tokenService.logout(claims, familyId)
   }
 
@@ -131,42 +157,38 @@ class AuthUsecaseService {
     return { twoFactorSecret: secret, qrCodeUrl: otpauthUrl(user.email, secret), enabled: false }
   }
 
-  async enableTwoFactor(userId: number, code: string): Promise<{ enabled: true }> {
-    const user: UserEntity | null = await this.userRepository.findById(userId)
-    if (!user) {
-      throw new NotFoundException(`User with ID ${userId} not found`)
-    }
+  async enableTwoFactor(claims: AccessClaims, userId: number, code: string): Promise<{ enabled: true }> {
+    const user: UserEntity = await this.ownAccount(claims, userId)
     if (!user.twoFactorSecret) {
       throw new BadRequestException("Request a two-factor secret before enabling it")
     }
-    if (!verifyCode(user.twoFactorSecret, code)) {
-      throw new UnauthorizedException("That code is not valid")
-    }
+
+    await this.acceptCode(user.id, user.twoFactorSecret, code)
+    await this.tokenService.revokeOtherSessions(claims.sub, claims.fam, "two_factor_enabled")
 
     user.isTwoFactorEnabled = true
     await this.userRepository.save(user)
+
     return { enabled: true }
   }
 
-  async disableTwoFactor(userId: number, code: string): Promise<{ enabled: false }> {
-    const user: UserEntity | null = await this.userRepository.findById(userId)
-    if (!user) {
-      throw new NotFoundException(`User with ID ${userId} not found`)
-    }
+  async disableTwoFactor(claims: AccessClaims, userId: number, code: string): Promise<{ enabled: false }> {
+    const user: UserEntity = await this.ownAccount(claims, userId)
     if (!user.isTwoFactorEnabled || !user.twoFactorSecret) {
       throw new ConflictException("Two-factor authentication is not enabled for this account")
     }
-    if (!verifyCode(user.twoFactorSecret, code)) {
-      throw new UnauthorizedException("That code is not valid")
-    }
+
+    await this.acceptCode(user.id, user.twoFactorSecret, code)
+    await this.tokenService.revokeOtherSessions(claims.sub, claims.fam, "two_factor_disabled")
 
     user.isTwoFactorEnabled = false
-    user.twoFactorSecret = undefined
+    user.twoFactorSecret = null
     await this.userRepository.save(user)
+
     return { enabled: false }
   }
 
-  private async issueFor(user: UserEntity): Promise<AuthTokenOutputDto> {
+  async startSession(user: UserEntity): Promise<AuthTokenOutputDto> {
     const principalId: string = await this.principalResolver.resolveOrMintForUser(user)
     await this.principalResolver.syncKind(principalId, user.role)
 
@@ -181,6 +203,31 @@ class AuthUsecaseService {
       role: user.role,
       principalId
     })
+  }
+
+  private async ownAccount(claims: AccessClaims, userId: number): Promise<UserEntity> {
+    if (claims.uid !== userId) {
+      throw new ForbiddenException("This account may only act on its own second factor")
+    }
+
+    const user: UserEntity | null = await this.userRepository.findById(userId)
+    if (!user) {
+      throw new NotFoundException(`User with ID ${userId} not found`)
+    }
+
+    return user
+  }
+
+  private async acceptCode(userId: number, secret: string, code: string): Promise<void> {
+    const step: number | null = acceptedStep(secret, code)
+    if (step === null) {
+      throw new UnprocessableEntityException("That code is not valid")
+    }
+
+    const fresh: boolean = await this.userRepository.acceptTwoFactorStep(userId, step)
+    if (!fresh) {
+      throw new UnprocessableEntityException("That code has already been used; wait for the next one")
+    }
   }
 }
 

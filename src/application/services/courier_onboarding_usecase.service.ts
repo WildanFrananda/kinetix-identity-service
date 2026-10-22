@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   ConflictException,
   Inject,
   Injectable,
@@ -9,9 +10,19 @@ import {
 import ApproveCourierOutputDto from "../dto/approve_courier_output.dto"
 import UserEntity from "../../domain/entities/user.entity"
 import FleetRegistryError from "../../domain/errors/fleet_registry.error"
+import CourierApplicationRepositoryPort from "../../domain/ports/courier_application_repository.port"
 import FleetRegistryPort from "../../domain/ports/fleet_registry.port"
 import UserRepositoryPort from "../../domain/ports/user_repository.port"
 import PrincipalResolverService from "./principal_resolver.service"
+import type {
+  ApplicationPage,
+  ApplicationQuery,
+  CourierApplicationStatus,
+  CourierApplicationView
+} from "../../types/application.type"
+import type { FleetActivation } from "../../types/fleet.type"
+
+const NO_VEHICLE = "NO_DRIVER_RECORD"
 
 @Injectable()
 class CourierOnboardingUsecaseService {
@@ -22,8 +33,16 @@ class CourierOnboardingUsecaseService {
     private readonly userRepository: UserRepositoryPort,
     private readonly principalResolver: PrincipalResolverService,
     @Inject("FleetRegistryPort")
-    private readonly fleet: FleetRegistryPort
+    private readonly fleet: FleetRegistryPort,
+    @Inject("CourierApplicationRepositoryPort")
+    private readonly applications: CourierApplicationRepositoryPort
   ) {}
+
+  async listApplications(
+    query: ApplicationQuery<CourierApplicationStatus>
+  ): Promise<ApplicationPage<CourierApplicationView>> {
+    return await this.applications.list(query)
+  }
 
   async approveCourier(principalId: string): Promise<ApproveCourierOutputDto> {
     const userId: number | null = await this.principalResolver.userIdForPrincipal(principalId)
@@ -37,14 +56,8 @@ class CourierOnboardingUsecaseService {
     }
 
     if (user.role === "courier") {
-      const repeated = await this.activateInFleet(principalId)
-      return new ApproveCourierOutputDto(
-        principalId,
-        user.email,
-        user.role,
-        repeated.driverId,
-        repeated.activated
-      )
+      const repeated: FleetActivation = await this.activateInFleet(user, principalId, false)
+      return await this.approved(user, principalId, repeated)
     }
 
     if (user.role !== "customer") {
@@ -58,43 +71,80 @@ class CourierOnboardingUsecaseService {
 
     await this.principalResolver.syncKind(principalId, user.role)
 
-    const fleet = await this.activateInFleet(principalId)
+    const activation: FleetActivation = await this.activateInFleet(user, principalId, true)
 
-    return new ApproveCourierOutputDto(
+    return await this.approved(user, principalId, activation)
+  }
+
+  private async approved(
+    user: UserEntity,
+    principalId: string,
+    activation: FleetActivation
+  ): Promise<ApproveCourierOutputDto> {
+    await this.applications.recordApproved({
+      userId: user.id,
       principalId,
-      user.email,
-      user.role,
-      fleet.driverId,
-      fleet.activated
-    )
+      driverId: activation.driverId
+    })
+
+    return new ApproveCourierOutputDto(principalId, user.email, user.role, activation.driverId, true)
   }
 
   private async activateInFleet(
-    principalId: string
-  ): Promise<{ driverId: number | null; activated: boolean }> {
+    user: UserEntity,
+    principalId: string,
+    promoted: boolean
+  ): Promise<FleetActivation> {
     try {
-      const activation = await this.fleet.activateDriver(principalId)
-      return { driverId: activation.driverId, activated: true }
+      return await this.fleet.activateDriver(principalId)
     } catch (error) {
-      if (error instanceof FleetRegistryError && error.failure.code === "NO_DRIVER_RECORD") {
-        this.logger.warn({
-          message: "approved an account with no vehicle filed; it must register one to drive",
-          principal_id: principalId
-        })
-        return { driverId: null, activated: false }
+      if (promoted && error instanceof FleetRegistryError && error.definitelyDidNothing) {
+        await this.restoreCustomer(user, principalId)
       }
-
-      if (error instanceof FleetRegistryError) {
-        throw new ServiceUnavailableException({
-          error: error.failure.code,
-          message:
-            "The account was promoted to courier, but the fleet could not be told to activate the " +
-            "driver. Approve again once the fleet is reachable; nothing will be duplicated."
-        })
-      }
-
-      throw error
+      throw this.refusalOf(error)
     }
+  }
+
+  private async restoreCustomer(user: UserEntity, principalId: string): Promise<void> {
+    user.role = "customer"
+    await this.userRepository.save(user)
+    await this.principalResolver.syncKind(principalId, user.role)
+
+    this.logger.warn({
+      message: "the fleet refused the activation, so the account was returned to customer",
+      principal_id: principalId
+    })
+  }
+
+  private refusalOf(error: unknown): Error {
+    if (!(error instanceof FleetRegistryError)) {
+      return error instanceof Error ? error : new Error(String(error))
+    }
+
+    if (error.failure.code === NO_VEHICLE) {
+      return new ConflictException({
+        error: NO_VEHICLE,
+        message:
+          "This account has filed no vehicle, so it cannot be approved as a courier. Nothing was " +
+          "changed; it must register a vehicle first."
+      })
+    }
+
+    if (error.definitelyDidNothing) {
+      return new BadGatewayException({
+        error: error.failure.code,
+        message:
+          `The fleet refused to activate this driver (${error.failure.code}: ${error.failure.message}). ` +
+          "Nothing was changed."
+      })
+    }
+
+    return new ServiceUnavailableException({
+      error: error.failure.code,
+      message:
+        "The account is now a courier, but the fleet could not be told to activate the driver. " +
+        "Approve again once the fleet is reachable; nothing will be duplicated."
+    })
   }
 }
 

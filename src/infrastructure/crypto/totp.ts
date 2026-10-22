@@ -68,23 +68,28 @@ function codeAt(secret: string, counter: number): string {
   return String(binary % 10 ** DIGITS).padStart(DIGITS, "0")
 }
 
-function verifyCode(secret: string, code: string, atMs: number = Date.now()): boolean {
+function acceptedStep(secret: string, code: string, atMs: number = Date.now()): number | null {
   const candidate = code.trim()
   if (!/^\d{6}$/.test(candidate)) {
-    return false
+    return null
   }
 
   const step = Math.floor(atMs / 1000 / PERIOD_SECONDS)
   const expected = Buffer.from(candidate, "utf8")
 
-  let matched = false
+  let matched: number | null = null
   for (let offset = -WINDOW_STEPS; offset <= WINDOW_STEPS; offset += 1) {
     const actual = Buffer.from(codeAt(secret, step + offset), "utf8")
     if (actual.length === expected.length && timingSafeEqual(actual, expected)) {
-      matched = true
+      matched = step + offset
     }
   }
+
   return matched
+}
+
+function verifyCode(secret: string, code: string, atMs: number = Date.now()): boolean {
+  return acceptedStep(secret, code, atMs) !== null
 }
 
 function otpauthUrl(email: string, secret: string): string {
@@ -92,4 +97,14 @@ function otpauthUrl(email: string, secret: string): string {
   return `otpauth://totp/${label}?secret=${secret}&issuer=Kinetix&algorithm=SHA1&digits=${DIGITS}&period=${PERIOD_SECONDS}`
 }
 
-export { base32Decode, base32Encode, codeAt, generateSecret, otpauthUrl, verifyCode, DIGITS, PERIOD_SECONDS }
+export {
+  acceptedStep,
+  base32Decode,
+  base32Encode,
+  codeAt,
+  generateSecret,
+  otpauthUrl,
+  verifyCode,
+  DIGITS,
+  PERIOD_SECONDS
+}

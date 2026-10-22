@@ -30,7 +30,9 @@ describeWithDatabase("refresh rotation against a real database", () => {
     const settings: Record<string, string> = {
       KINETIX_IDENTITY_JWT_PRIVATE_KEY_B64: Buffer.from(privateKey).toString("base64"),
       JWT_ISSUER: "https://identity.kinetix.test",
-      JWT_AUDIENCE: "kinetix"
+      JWT_AUDIENCE: "kinetix",
+      JWT_ACCESS_TTL_SECONDS: "900",
+      JWT_REFRESH_TTL_SECONDS: "2592000"
     }
     const config = { get: (name: string) => settings[name] } as any
 

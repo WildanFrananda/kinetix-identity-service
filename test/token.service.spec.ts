@@ -2,6 +2,7 @@ import { generateKeyPairSync, randomUUID } from "crypto"
 import * as jwt from "jsonwebtoken"
 import TokenService from "../src/application/services/token.service"
 import JwtKeyProvider from "../src/infrastructure/crypto/jwt_key_provider"
+import { uniqueViolation } from "./support/sql_errors"
 
 const ISSUER = "https://identity.kinetix.test"
 const AUDIENCE = "kinetix"
@@ -40,6 +41,13 @@ function makeRepository<T extends Record<string, any>>() {
       rows.push(row)
       return row
     }),
+    insert: jest.fn(async (row: T) => {
+      if (rows.some((r) => r.jti === row.jti)) {
+        throw uniqueViolation()
+      }
+      rows.push({ ...row })
+      return { identifiers: [], generatedMaps: [], raw: [] }
+    }),
     findOne: jest.fn(async ({ where }: { where: Record<string, any> }) => {
       return rows.find((r) => Object.entries(where).every(([k, v]) => r[k] === v)) ?? null
     }),
@@ -48,7 +56,13 @@ function makeRepository<T extends Record<string, any>>() {
       for (const row of rows) {
         const matches = Object.entries(where).every(([k, v]) => {
           if (v && typeof v === "object" && typeof v.type === "string") {
-            return v.type === "isNull" ? row[k] === null || row[k] === undefined : true
+            if (v.type === "isNull") {
+              return row[k] === null || row[k] === undefined
+            }
+            if (v.type === "not") {
+              return row[k] !== v.value
+            }
+            return true
           }
           return row[k] === v
         })
@@ -121,6 +135,15 @@ describe("TokenService — minting", () => {
 
     expect((jwt.decode(pair.accessToken) as jwt.JwtPayload).token_use).toBe("access")
     expect((jwt.decode(pair.refreshToken) as jwt.JwtPayload).token_use).toBe("refresh")
+  })
+
+  it("names the session family in the access token, so a session can be told from the others", async () => {
+    const { service } = makeService()
+    const pair = await service.issuePair(USER, PRINCIPAL)
+
+    const access = jwt.decode(pair.accessToken) as jwt.JwtPayload
+    const refresh = jwt.decode(pair.refreshToken) as jwt.JwtPayload
+    expect(access.fam).toBe(refresh.fam)
   })
 
   it("refuses a key that is too small for RS256", () => {
@@ -420,6 +443,60 @@ describe("TokenService — revocation", () => {
     await service.logout(claims)
     await expect(service.logout(claims)).resolves.toBeUndefined()
   })
+
+  it("fails the logout when the revocation could not be written", async () => {
+    const { service, revokedRepo } = makeService()
+    const pair = await service.issuePair(USER, PRINCIPAL)
+    const claims = await service.verifyAccess(pair.accessToken)
+    revokedRepo.insert.mockRejectedValueOnce(new Error("connection terminated unexpectedly"))
+
+    await expect(service.logout(claims)).rejects.toThrow("connection terminated")
+  })
+
+  it("ends every other session of the principal and keeps the one named", async () => {
+    const { service, refreshRepo } = makeService()
+    const current = await service.issuePair(USER, PRINCIPAL)
+    const other = await service.issuePair(USER, PRINCIPAL)
+    const stranger = await service.issuePair(USER, "ffffffff-bbbb-cccc-dddd-eeeeeeeeeeee")
+    const currentFamily = String((jwt.decode(current.accessToken) as jwt.JwtPayload).fam)
+
+    await service.revokeOtherSessions(PRINCIPAL, currentFamily, "two_factor_enabled")
+
+    await expect(service.rotate(other.refreshToken, USER)).rejects.toThrow("revoked")
+    await expect(service.rotate(current.refreshToken, USER)).resolves.toBeDefined()
+    await expect(service.rotate(stranger.refreshToken, USER)).resolves.toBeDefined()
+    expect(refreshRepo.rows.filter((row) => row.revokedReason === "two_factor_enabled")).toHaveLength(1)
+  })
+
+  it("ends every session when the caller's token names no session", async () => {
+    const { service } = makeService()
+    const first = await service.issuePair(USER, PRINCIPAL)
+    const second = await service.issuePair(USER, PRINCIPAL)
+
+    await service.revokeOtherSessions(PRINCIPAL, undefined, "two_factor_disabled")
+
+    await expect(service.rotate(first.refreshToken, USER)).rejects.toThrow("revoked")
+    await expect(service.rotate(second.refreshToken, USER)).rejects.toThrow("revoked")
+  })
+})
+
+describe("TokenService — a two-factor challenge", () => {
+  it("is answered once and refused the second time", async () => {
+    const { service } = makeService()
+    const challenge = service.issueMfaChallenge(USER, PRINCIPAL)
+    const claims = service.peekMfaChallenge(challenge.token)
+
+    await expect(service.consumeMfaChallenge(claims)).resolves.toBeUndefined()
+    await expect(service.consumeMfaChallenge(claims)).rejects.toThrow("already been answered")
+  })
+
+  it("is not taken for answered when the record could not be written", async () => {
+    const { service, revokedRepo } = makeService()
+    const claims = service.peekMfaChallenge(service.issueMfaChallenge(USER, PRINCIPAL).token)
+    revokedRepo.insert.mockRejectedValueOnce(new Error("connection terminated unexpectedly"))
+
+    await expect(service.consumeMfaChallenge(claims)).rejects.toThrow("connection terminated")
+  })
 })
 
 describe("TokenService — configuration", () => {
@@ -430,6 +507,13 @@ describe("TokenService — configuration", () => {
   it("refuses to start without an audience", () => {
     expect(() => makeService({ JWT_AUDIENCE: "" })).toThrow(/JWT_AUDIENCE/)
   })
+
+  it.each(["JWT_ACCESS_TTL_SECONDS", "JWT_REFRESH_TTL_SECONDS"])(
+    "refuses to start without %s rather than assuming a lifetime",
+    (name) => {
+      expect(() => makeService({ [name]: "" })).toThrow(new RegExp(`${name} is required`))
+    }
+  )
 
   it("refuses a refresh lifetime that is not longer than the access lifetime", () => {
     expect(() => makeService({ JWT_REFRESH_TTL_SECONDS: "60" })).toThrow(/greater than the access TTL/)

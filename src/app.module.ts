@@ -9,11 +9,13 @@ import ProfileTypeormEntity from "./infrastructure/persistence/entities/profile_
 import MerchantVerificationTypeormEntity from "./infrastructure/persistence/entities/merchant_verification_typeorm.entity"
 import GeocodedAddressTypeormEntity from "./infrastructure/persistence/entities/geocoded_address_typeorm.entity"
 import MerchantTypeormEntity from "./infrastructure/persistence/entities/merchant_typeorm.entity"
+import CourierApplicationTypeormEntity from "./infrastructure/persistence/entities/courier_application_typeorm.entity"
 
 import TypeormUserRepositoryAdapter from "./infrastructure/persistence/adapters/typeorm_user_repository.adapter"
 import TypeormProfileRepositoryAdapter from "./infrastructure/persistence/adapters/typeorm_profile_repository.adapter"
 import TypeormMerchantVerificationRepositoryAdapter from "./infrastructure/persistence/adapters/typeorm_merchant_verification_repository.adapter"
 import TypeormMerchantRepositoryAdapter from "./infrastructure/persistence/adapters/typeorm_merchant_repository.adapter"
+import TypeormCourierApplicationRepositoryAdapter from "./infrastructure/persistence/adapters/typeorm_courier_application_repository.adapter"
 
 import AuthUsecaseService from "./application/services/auth_usecase.service"
 import UserProfileUsecaseService from "./application/services/user_profile_usecase.service"
@@ -45,31 +47,27 @@ import JwtAuthGuard from "./adapters/guards/jwt_auth.guard"
 import RolesGuard from "./adapters/guards/roles.guard"
 import SelfOrStaffGuard from "./adapters/guards/self_or_staff.guard"
 import JwksController from "./adapters/controllers/jwks.controller"
+import { positiveIntegerSetting, requiredSetting } from "./infrastructure/config/required_setting"
+import { DEFAULT_THROTTLE } from "./infrastructure/http/throttle_policy"
+
+const DATABASE_CONNECT_TIMEOUT_MS = 5000
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60000,
-        limit: 10
-      }
-    ]),
+    ThrottlerModule.forRoot([DEFAULT_THROTTLE]),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
-        const dbPassword = config.get<string>("DB_PASSWORD") || process.env.DB_PASSWORD
-        if (!dbPassword) {
-          throw new Error("DB_PASSWORD is required and has no default. Set it in the environment.")
-        }
         return {
           type: "postgres",
-          host: config.get<string>("DB_HOST", "localhost"),
-          port: Number(config.get<number>("DB_PORT", 5432)),
-          username: config.get<string>("DB_USERNAME", "postgres"),
-          password: dbPassword,
-          database: config.get<string>("DB_DATABASE", "kinetix_identity_dev"),
+          host: requiredSetting("DB_HOST", config.get<string>("DB_HOST")),
+          port: positiveIntegerSetting("DB_PORT", config.get<string>("DB_PORT")),
+          username: requiredSetting("DB_USERNAME", config.get<string>("DB_USERNAME")),
+          password: requiredSetting("DB_PASSWORD", config.get<string>("DB_PASSWORD")),
+          database: requiredSetting("DB_DATABASE", config.get<string>("DB_DATABASE")),
+          connectTimeoutMS: DATABASE_CONNECT_TIMEOUT_MS,
           entities: [
             PrincipalTypeormEntity,
             PrincipalAliasTypeormEntity,
@@ -79,7 +77,8 @@ import JwksController from "./adapters/controllers/jwks.controller"
             ProfileTypeormEntity,
             MerchantVerificationTypeormEntity,
             MerchantTypeormEntity,
-            GeocodedAddressTypeormEntity
+            GeocodedAddressTypeormEntity,
+            CourierApplicationTypeormEntity
           ],
           synchronize: false
         }
@@ -94,7 +93,8 @@ import JwksController from "./adapters/controllers/jwks.controller"
       ProfileTypeormEntity,
       MerchantVerificationTypeormEntity,
       MerchantTypeormEntity,
-      GeocodedAddressTypeormEntity
+      GeocodedAddressTypeormEntity,
+      CourierApplicationTypeormEntity
     ])
   ],
   controllers: [
@@ -139,6 +139,10 @@ import JwksController from "./adapters/controllers/jwks.controller"
     {
       provide: "MerchantRepositoryPort",
       useClass: TypeormMerchantRepositoryAdapter
+    },
+    {
+      provide: "CourierApplicationRepositoryPort",
+      useClass: TypeormCourierApplicationRepositoryAdapter
     },
     {
       provide: "FleetRegistryPort",

@@ -1,12 +1,14 @@
 import { Injectable, UnauthorizedException } from "@nestjs/common"
 import { ConfigService } from "@nestjs/config"
 import { InjectRepository } from "@nestjs/typeorm"
-import { IsNull, LessThan, Repository } from "typeorm"
+import { IsNull, LessThan, Not, Repository } from "typeorm"
 import { randomUUID } from "crypto"
 import * as jwt from "jsonwebtoken"
 import JwtKeyProvider from "../../infrastructure/crypto/jwt_key_provider"
 import RefreshTokenTypeormEntity from "../../infrastructure/persistence/entities/refresh_token_typeorm.entity"
 import RevokedAccessTokenTypeormEntity from "../../infrastructure/persistence/entities/revoked_access_token_typeorm.entity"
+import { isUniqueViolation } from "../../infrastructure/persistence/sql_state"
+import { positiveIntegerSetting } from "../../infrastructure/config/required_setting"
 import type { AccessClaims, RefreshClaims, RotationOutcome, TokenPair, TokenSubject } from "../../types/token.type"
 import type { JwksDocument } from "../../types/jwks.type"
 import type { MfaChallengeClaims } from "../../types/two_factor.type"
@@ -37,13 +39,16 @@ class TokenService {
     this.issuer = issuer
     this.audience = audience
 
-    this.accessTtlSeconds = Number(this.config.get<string>("JWT_ACCESS_TTL_SECONDS") ?? 900)
-    this.refreshTtlSeconds = Number(this.config.get<string>("JWT_REFRESH_TTL_SECONDS") ?? 2592000)
+    this.accessTtlSeconds = positiveIntegerSetting(
+      "JWT_ACCESS_TTL_SECONDS",
+      this.config.get<string>("JWT_ACCESS_TTL_SECONDS")
+    )
+    this.refreshTtlSeconds = positiveIntegerSetting(
+      "JWT_REFRESH_TTL_SECONDS",
+      this.config.get<string>("JWT_REFRESH_TTL_SECONDS")
+    )
 
-    if (!Number.isFinite(this.accessTtlSeconds) || this.accessTtlSeconds <= 0) {
-      throw new Error("JWT_ACCESS_TTL_SECONDS must be a positive number of seconds.")
-    }
-    if (!Number.isFinite(this.refreshTtlSeconds) || this.refreshTtlSeconds <= this.accessTtlSeconds) {
+    if (this.refreshTtlSeconds <= this.accessTtlSeconds) {
       throw new Error("JWT_REFRESH_TTL_SECONDS must be a positive number greater than the access TTL.")
     }
   }
@@ -75,6 +80,7 @@ class TokenService {
         iat: now,
         exp: now + this.accessTtlSeconds,
         token_use: "access",
+        fam: familyId,
         uid: user.id,
         email: user.email,
         role: user.role
@@ -146,6 +152,18 @@ class TokenService {
       { algorithm: "RS256", keyid: this.keys.kid }
     )
     return { token, expiresIn: ttl }
+  }
+
+  async consumeMfaChallenge(claims: MfaChallengeClaims): Promise<void> {
+    const consumed = await this.recordRevokedJti(
+      claims.jti,
+      new Date(claims.exp * 1000),
+      "mfa_challenge_used"
+    )
+
+    if (!consumed) {
+      throw new UnauthorizedException("This challenge has already been answered; sign in again")
+    }
   }
 
   peekMfaChallenge(token: string): MfaChallengeClaims {
@@ -222,11 +240,20 @@ class TokenService {
   }
 
   async revokeAccessJti(jti: string, expiresAt: Date, reason: string): Promise<void> {
+    await this.recordRevokedJti(jti, expiresAt, reason)
+  }
+
+  private async recordRevokedJti(jti: string, expiresAt: Date, reason: string): Promise<boolean> {
     try {
-      await this.revokedRepository.save(this.revokedRepository.create({ jti, expiresAt, reason }))
-    } catch {
-      // already revoked
+      await this.revokedRepository.insert({ jti, expiresAt, reason })
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return false
+      }
+      throw error
     }
+
+    return true
   }
 
   async revokeFamily(familyId: string, reason: string): Promise<void> {
@@ -247,6 +274,22 @@ class TokenService {
   async revokeAllFamiliesForPrincipal(principalId: string, reason: string): Promise<void> {
     await this.refreshRepository.update(
       { principalId, revokedAt: IsNull() },
+      { revokedAt: new Date(), revokedReason: reason }
+    )
+  }
+
+  async revokeOtherSessions(
+    principalId: string,
+    keptFamilyId: string | undefined,
+    reason: string
+  ): Promise<void> {
+    if (keptFamilyId === undefined) {
+      await this.revokeAllFamiliesForPrincipal(principalId, reason)
+      return
+    }
+
+    await this.refreshRepository.update(
+      { principalId, familyId: Not(keptFamilyId), revokedAt: IsNull() },
       { revokedAt: new Date(), revokedReason: reason }
     )
   }

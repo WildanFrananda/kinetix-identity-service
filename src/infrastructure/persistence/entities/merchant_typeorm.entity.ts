@@ -34,8 +34,8 @@ class MerchantTypeormEntity {
   @Column({ unique: true })
   slug!: string
 
-  @Column({ nullable: true })
-  description?: string
+  @Column({ type: "varchar", nullable: true })
+  description?: string | null
 
   @Column()
   businessRegistrationNumber!: string
@@ -59,13 +59,13 @@ class MerchantTypeormEntity {
   postalCode!: string
 
   @Column({ type: "double precision", nullable: true })
-  latitude?: number
+  latitude?: number | null
 
   @Column({ type: "double precision", nullable: true })
-  longitude?: number
+  longitude?: number | null
 
   @Column({ type: "timestamptz", nullable: true })
-  geocodedAt?: Date
+  geocodedAt?: Date | null
 
   @CreateDateColumn()
   createdAt!: Date
