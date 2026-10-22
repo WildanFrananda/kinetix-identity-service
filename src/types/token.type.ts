@@ -12,6 +12,7 @@ type AccessClaims = {
   exp: number
   iat: number
   token_use: "access"
+  fam?: string
   uid: number
   email: string
   role: string

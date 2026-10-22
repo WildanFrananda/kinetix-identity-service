@@ -105,4 +105,100 @@ migration is declared on its entity in the same change.
 The gate runs the CLI as `bunx --bun typeorm`. GitHub's runner has Node, `bunx` follows the CLI's `node` shebang,
 and Node cannot load `src/data-source.ts` (its migration imports carry no extension), so without `--bun` the
 command fails before it compares anything. That failure is what the old gate reported as "no drift" on every run;
-the first run of the hardened gate (39192414868) showed it. GitLab's job runs in `oven/bun`, which has no Node.
+the first run of the hardened gate (39192414868) showed it. GitLab's jobs add Node to the pinned `oven/bun` image,
+so they need `--bun` too.
+
+## Rate limits count per client, behind exactly one hop
+
+`createFastifyAdapter` passes `isGatewayHop` as Fastify's `trustProxy`: the immediate peer is trusted to name the
+client only when it is on a loopback or private network (the gateway on the Docker network), and no further hop is
+ever trusted. `req.ip`, which `@nestjs/throttler` keys every bucket on, is then the address Kong appended to
+`X-Forwarded-For`; a client's own `X-Forwarded-For` entries sit in front of it and are never read. Until 2026-10-21
+there was no `trustProxy`, so `req.ip` was Kong for every request and all clients together shared five logins a
+minute. A hop count (`trustProxy: 1`) does not work: Fastify 5.12 fails a numeric `trustProxy` closed and trusts
+nothing. Kong itself sees client addresses (nothing sits in front of it; `api.` is a grey-cloud A record and Docker's
+DNAT keeps the source), and it must not set `trusted_ips` while that is so. A proxy added in front of Kong, or the
+edge service placed between Kong and identity, is a second hop, and this function changes with it.
+
+## No CORS here
+
+Identity sends no CORS headers. `app.enableCors()` answered `Access-Control-Allow-Origin: *` while production left
+Kong's CORS off on purpose. CORS belongs at the gateway, with explicit origins, when the first web client exists.
+
+## A second factor is spent once
+
+A challenge token's `jti` is written to `revoked_access_tokens` (reason `mfa_challenge_used`) when it is answered, so
+it mints one session, not one per request for 300 s; a wrong code does not spend it. `users.twoFactorLastStep` is the
+last TOTP time step accepted for the account, moved forward only by a conditional `UPDATE`, so a code is good once.
+Enabling or disabling the second factor ends every other session of the account (the user's ruling, 2026-10-21): the
+access token carries `fam`, its session's refresh family, and every other family is revoked. A token minted before
+`fam` existed names no session, so all of them end. Disabling writes the secret as `NULL`; it used to keep it, so
+`enable` re-armed the old secret without a new setup. Admins are not required to use a second factor yet.
+
+## A cleared value is written as NULL
+
+TypeORM's `save` skips a property that is `undefined`. The adapters therefore write `?? null` for every nullable
+column the domain clears: the profile's and merchant's point and `geocodedAt`, the merchant's description, the
+second-factor secret. Until 2026-10-21 a failed re-geocode kept the old point in the database while the response
+omitted it, and `GetMerchantInfo` sent couriers to the previous store address.
+
+## Emails match without case
+
+Register and login lower-case the email, `findByEmail` compares `lower(email)`, and `UQ_users_email_lower` makes
+two accounts that differ only by case impossible. Accounts made before 2026-10-21 keep the case they were written
+in. TypeORM does not read expression indexes, so the entity declares the index with `synchronize: false` for the
+reader, not for the drift gate.
+
+## An approval decides a pending application once
+
+`verify` and `reject` act on a `pending` seller application only, and an approval never touches a merchant that is
+`active` or `suspended`. Suspension waits on infra `docs/MERCHANT-SUSPENSION.md`. A courier application is recorded
+in `courier_applications` when the vehicle is filed and marked approved by `approve`, which is what an admin lists;
+the migration recorded existing couriers as approved, and a courier who registered before 2026-10-21 and was never
+approved appears once it submits the registration again. Approval refuses an account with no vehicle
+(`NO_DRIVER_RECORD`, 409) and any other definite refusal from the fleet (502), and returns a promoted account to
+customer, because the fleet did nothing; an unknown outcome keeps the role and asks for a retry. Courier
+registration resumes only a customer's or a courier's account: a seller's or admin's credentials would have filed a
+vehicle under that principal.
+
+gRPC maps `active` to `MERCHANT_STATUS_UNSPECIFIED` because `identity.v1.MerchantStatus` has no value for it; nothing
+sets `active` yet.
+
+## Account ids are read from the raw path
+
+`@AccountIdParam` reads `request.params` itself. The global `ValidationPipe` (`transform: true`) converts a route
+parameter whose type is `number` with `+value` before any parameter pipe runs, so `ParseIntPipe` saw `0x10` as 16,
+`1e3` as 1000, and `-1`, `0` and ids beyond int4 passed to Postgres.
+
+## A write that loses a race is 409 or 404
+
+The adapters turn Postgres' unique violation into `RecordConflictError` and a foreign-key violation into
+`MissingReferenceError`, and the exception filter answers them 409 and 404. A 500 no longer claims that nothing
+changed: register, seller approval and courier registration write in steps, and one can fail after another.
+
+## A role change reaches tokens at the next refresh
+
+The role is a claim in the access token, so a promotion or demotion is seen by other services only when the client
+refreshes, up to `JWT_ACCESS_TTL_SECONDS` later. That is a design limit, not a defect.
+
+## A database that cannot be reached is 503
+
+`isDatabaseUnavailable` (`src/infrastructure/persistence/database_unavailable.ts`) recognises a socket that would not
+connect or was cut (`ECONNREFUSED`, `ETIMEDOUT`, `Connection terminated…`), Postgres refusing or shutting down
+(SQLSTATE class `08`, `53300`, `57P01`–`57P03`) and the pool's wait running out (`timeout exceeded when trying to
+connect`), also inside a `QueryFailedError` or an `AggregateError`. The exception filter answers those 503
+`DATABASE_UNAVAILABLE` on every HTTP route, the token guard's revocation lookup included; it used to be 500, and a
+constraint violation is still what the adapters make of it. `connectTimeoutMS` (5 s) bounds both a new connection and
+the wait for a pooled one, so a database that does not answer becomes a 503 rather than a request that hangs until
+Kong gives up.
+
+## Every peer address is read at start
+
+`FleetRegistryGrpcAdapter` reads `MATCHING_GRPC_HOST` in its constructor, so identity refuses to start without it. It
+used to be read at the first courier registration, which then answered 400 after the account had been created.
+Matching is identity's only outbound gRPC peer.
+
+## Jest runs on Node
+
+Every job installs with Bun and runs jest on Node: jest cannot set up its environment under Bun. GitHub's runner has
+Node, and `bunx jest` follows jest's shebang; GitLab's jobs add Node to the pinned Bun image with `apk`.

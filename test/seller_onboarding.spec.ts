@@ -194,6 +194,90 @@ describe("SellerOnboardingUsecaseService Unit Tests", () => {
     expect(verification.status).toBe("pending")
   })
 
+  it("gives a new merchant no invented description", async () => {
+    mockVerificationRepo.findByUserId.mockResolvedValue(pending())
+    mockVerificationRepo.save.mockImplementation(async (v: MerchantVerificationEntity) => v)
+    mockMerchantRepo.findByUserId.mockResolvedValue(null)
+    mockMerchantRepo.save.mockImplementation(async (m: MerchantEntity) => savedAsSeven(m))
+
+    await service.approveVerification(1)
+
+    expect(mockMerchantRepo.save.mock.calls[0][0].description).toBeUndefined()
+  })
+
+  it.each(["verified", "rejected"] as const)(
+    "refuses to approve an application that is %s, and changes nothing",
+    async (status) => {
+      const decided = pending()
+      decided.status = status
+      mockVerificationRepo.findByUserId.mockResolvedValue(decided)
+
+      await expect(service.approveVerification(1)).rejects.toThrow(`is ${status}, not pending`)
+      expect(mockMerchantRepo.save).not.toHaveBeenCalled()
+      expect(mockUserRepo.save).not.toHaveBeenCalled()
+      expect(mockVerificationRepo.save).not.toHaveBeenCalled()
+    }
+  )
+
+  it("says no application exists, not that none is pending, when there is none", async () => {
+    mockVerificationRepo.findByUserId.mockResolvedValue(null)
+
+    await expect(service.approveVerification(1)).rejects.toThrow("No seller application found for User ID 1")
+  })
+
+  it.each(["active", "suspended"] as const)(
+    "never resets a merchant that is %s back to verified",
+    async (status) => {
+      user.role = "seller"
+      mockVerificationRepo.findByUserId.mockResolvedValue(pending())
+      mockMerchantRepo.findByUserId.mockResolvedValue(
+        new MerchantEntity(7, 1, "Kinetix Store", "kinetix-store", "R", "T", status)
+      )
+
+      await expect(service.approveVerification(1)).rejects.toThrow(`is ${status}`)
+      expect(mockMerchantRepo.save).not.toHaveBeenCalled()
+      expect(mockVerificationRepo.save).not.toHaveBeenCalled()
+    }
+  )
+
+  it("rejects a pending application", async () => {
+    mockVerificationRepo.findByUserId.mockResolvedValue(pending())
+    mockVerificationRepo.save.mockImplementation(async (v: MerchantVerificationEntity) => v)
+
+    const rejected = await service.rejectVerification(1)
+
+    expect(rejected.status).toBe("rejected")
+    expect(mockUserRepo.save).not.toHaveBeenCalled()
+    expect(mockMerchantRepo.save).not.toHaveBeenCalled()
+  })
+
+  it("refuses to reject an application that is already verified", async () => {
+    const verified = pending()
+    verified.status = "verified"
+    mockVerificationRepo.findByUserId.mockResolvedValue(verified)
+
+    await expect(service.rejectVerification(1)).rejects.toThrow("is verified, not pending")
+    expect(mockVerificationRepo.save).not.toHaveBeenCalled()
+  })
+
+  it("lets a rejected applicant file again, as pending", async () => {
+    const rejected = pending()
+    rejected.status = "rejected"
+    mockVerificationRepo.findByUserId.mockResolvedValue(rejected)
+    mockVerificationRepo.save.mockImplementation(async (v: MerchantVerificationEntity) => v)
+
+    const refiled = await service.onboardSeller(1, {
+      storeName: "Kinetix Store",
+      businessRegistrationNumber: "REG-100",
+      taxId: "TAX-200",
+      streetAddress: "Jl. Cikini Raya No. 99",
+      city: "Jakarta",
+      postalCode: "10330"
+    })
+
+    expect(refiled.status).toBe("pending")
+  })
+
   it("should not collide when two stores share a name", async () => {
     mockVerificationRepo.findByUserId.mockResolvedValue(pending())
     mockVerificationRepo.save.mockImplementation(async (v: MerchantVerificationEntity) => v)

@@ -1,9 +1,8 @@
-import { Logger, ValidationPipe } from "@nestjs/common"
+import { Logger } from "@nestjs/common"
 import { NestFactory } from "@nestjs/core"
 import { ReflectionService } from "@grpc/reflection"
 import { MicroserviceOptions, Transport } from "@nestjs/microservices"
-import { FastifyAdapter, NestFastifyApplication } from "@nestjs/platform-fastify"
-import { dirname, join } from "path"
+import { NestFastifyApplication } from "@nestjs/platform-fastify"
 import type { Server } from "@grpc/grpc-js"
 import type { PackageDefinition } from "@grpc/proto-loader"
 import AppModule from "./app.module"
@@ -21,36 +20,26 @@ import { contractProto, contractProtoRoot } from "./infrastructure/mesh/contract
 import { logLevelsFrom } from "./infrastructure/observability/log_levels"
 import { declareGrpcMethod } from "./infrastructure/observability/metrics_registry"
 import { requestIdInterceptor } from "./infrastructure/observability/request_id_interceptor"
-import { requestIdMiddleware } from "./infrastructure/observability/request_id_middleware"
 import {
   graceSecondsFrom,
   installShutdownDrain
 } from "./infrastructure/observability/shutdown_drain"
-import { UnhandledExceptionFilter } from "./infrastructure/observability/unhandled_exception_filter"
+import { createFastifyAdapter } from "./infrastructure/http/fastify_adapter"
+import { configureHttpPipeline } from "./infrastructure/http/http_pipeline"
+import { positiveIntegerSetting } from "./infrastructure/config/required_setting"
 
 async function bootstrap() {
   const graceSeconds = graceSecondsFrom(process.env.SHUTDOWN_GRACE_SECONDS)
+  const port = positiveIntegerSetting("PORT", process.env.PORT)
 
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter(),
+    createFastifyAdapter(),
     { logger: new JsonLogger(logLevelsFrom(process.env.LOG_LEVEL)) }
   )
 
   installHttpMetrics(app)
-
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true
-    })
-  )
-
-  app.use(requestIdMiddleware)
-  app.useGlobalFilters(new UnhandledExceptionFilter())
-
-  app.enableCors()
+  configureHttpPipeline(app)
 
   const grpcPort = process.env.GRPC_PORT
   if (!grpcPort) {
@@ -95,7 +84,6 @@ async function bootstrap() {
 
   await app.startAllMicroservices()
 
-  const port = Number(process.env.PORT) || 5000
   await app.listen(port, "0.0.0.0")
 
   installShutdownDrain({ app, grpcServer, graceSeconds })

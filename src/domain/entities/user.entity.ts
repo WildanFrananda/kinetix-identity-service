@@ -4,7 +4,7 @@ class UserEntity {
   passwordHash: string
   role: "customer" | "seller" | "courier" | "admin"
   isTwoFactorEnabled: boolean
-  twoFactorSecret?: string
+  twoFactorSecret: string | null
   createdAt: Date
   updatedAt: Date
 
@@ -16,7 +16,7 @@ class UserEntity {
     isTwoFactorEnabled: boolean = false,
     createdAt: Date = new Date(),
     updatedAt: Date = new Date(),
-    twoFactorSecret?: string
+    twoFactorSecret: string | null = null
   ) {
     this.id = id
     this.email = email

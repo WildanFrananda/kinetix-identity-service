@@ -25,10 +25,10 @@ jobs:
       - run: bun run build
 
   unit:
-    # Bun, like every other job. This ran on Node until 2026-09-21 for a real reason: jest 30's
-    # environment walked the global object and read `ReadableStreamDefaultReader.closed` off the
-    # prototype, which threw under Bun. That is fixed upstream — the whole suite passes under
-    # bun 1.3.14 — and keeping Node here meant a second lockfile.
+    # Bun installs; jest runs on the runner's Node, because `bunx jest` follows jest's `node`
+    # shebang. Jest cannot set up its environment under Bun (it reads
+    # `ReadableStreamDefaultReader.closed` off the prototype and throws), which is why GitLab's
+    # jobs add Node to the Bun image. Node no longer needs its own install or lockfile.
     #
     # Two lockfiles is two answers to "which version is installed". They agreed until they did not:
     # on 2026-09-20 bun.lock held kinetix-contracts@1.0.13 and package-lock.json held 1.0.10, so the
@@ -83,10 +83,10 @@ jobs:
       # guards — a cursor that reads the same merchant for ever — happens between Postgres and the
       # driver, so a test with a fake repository passes either way and proves nothing. The files
       # share one database and each clears the tables it reads, so they run one at a time.
-      - name: The merchant cursor advances and refresh rotation cannot race
+      - name: The merchant cursor advances, refresh rotation cannot race, account writes hold, an outage is 503
         env:
           KINETIX_TEST_POSTGRES: "1"
-        run: bunx jest --config jest.config.cjs --runInBand test/merchant_cursor_precision.spec.ts test/merchant_change_transaction.spec.ts test/refresh_rotation_race.spec.ts
+        run: bunx jest --config jest.config.cjs --runInBand test/merchant_cursor_precision.spec.ts test/merchant_change_transaction.spec.ts test/refresh_rotation_race.spec.ts test/account_writes.spec.ts test/database_outage.spec.ts
 
       # The drift gate. `migration:generate` exits non-zero with "No changes in database schema
       # were found" when the entities and the schema agree — so a SUCCESSFUL generate means

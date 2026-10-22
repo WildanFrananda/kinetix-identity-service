@@ -1,8 +1,9 @@
-import { IsNotEmpty, IsString, Matches } from "class-validator"
+import { IsNotEmpty, IsString, Matches, MaxLength } from "class-validator"
 
 class TwoFactorVerifyInputDto {
   @IsString()
   @IsNotEmpty({ message: "challengeToken is required" })
+  @MaxLength(4096)
   challengeToken!: string
 
   @IsString()

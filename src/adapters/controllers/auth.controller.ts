@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common"
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from "@nestjs/common"
 import { Throttle, ThrottlerGuard } from "@nestjs/throttler"
 import AuthUsecaseService from "../../application/services/auth_usecase.service"
 import LoginInputDto from "../../application/dto/login_input.dto"
@@ -7,11 +7,13 @@ import RefreshInputDto from "../../application/dto/refresh_input.dto"
 import TwoFactorCodeInputDto from "../../application/dto/two_factor_code_input.dto"
 import TwoFactorVerifyInputDto from "../../application/dto/two_factor_verify_input.dto"
 import AuthTokenOutputDto from "../../application/dto/auth_token_output.dto"
+import LogoutInputDto from "../../application/dto/logout_input.dto"
 import type { AccessClaims } from "../../types/token.type"
-import type { CurrentUserView, LogoutBody } from "../../types/auth.type"
+import type { CurrentUserView } from "../../types/auth.type"
 import type { TwoFactorChallenge, TwoFactorSetup } from "../../types/two_factor.type"
 import { CurrentUser, Public } from "../decorators/auth.decorators"
 import SelfOrStaffGuard, { OwnerParam } from "../guards/self_or_staff.guard"
+import { AccountIdParam } from "../decorators/account_id_param.decorator"
 
 @Controller("api/v1/auth")
 @UseGuards(ThrottlerGuard)
@@ -52,8 +54,8 @@ class AuthController {
 
   @Post("logout")
   @HttpCode(HttpStatus.NO_CONTENT)
-  async logout(@CurrentUser() claims: AccessClaims, @Body() body: LogoutBody): Promise<void> {
-    await this.authUsecase.logout(claims, body?.refreshToken)
+  async logout(@CurrentUser() claims: AccessClaims, @Body() dto: LogoutInputDto): Promise<void> {
+    await this.authUsecase.logout(claims, dto.refreshToken)
   }
 
   @Get("me")
@@ -72,7 +74,7 @@ class AuthController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(SelfOrStaffGuard)
   @OwnerParam("id")
-  async setupTwoFactor(@Param("id", ParseIntPipe) userId: number): Promise<TwoFactorSetup> {
+  async setupTwoFactor(@AccountIdParam("id") userId: number): Promise<TwoFactorSetup> {
     return await this.authUsecase.setupTwoFactor(userId)
   }
 
@@ -82,10 +84,11 @@ class AuthController {
   @OwnerParam("id")
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   async enableTwoFactor(
-    @Param("id", ParseIntPipe) userId: number,
+    @CurrentUser() claims: AccessClaims,
+    @AccountIdParam("id") userId: number,
     @Body() dto: TwoFactorCodeInputDto
   ): Promise<{ enabled: true }> {
-    return await this.authUsecase.enableTwoFactor(userId, dto.code)
+    return await this.authUsecase.enableTwoFactor(claims, userId, dto.code)
   }
 
   @Post("2fa/disable/:id")
@@ -94,10 +97,11 @@ class AuthController {
   @OwnerParam("id")
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   async disableTwoFactor(
-    @Param("id", ParseIntPipe) userId: number,
+    @CurrentUser() claims: AccessClaims,
+    @AccountIdParam("id") userId: number,
     @Body() dto: TwoFactorCodeInputDto
   ): Promise<{ enabled: false }> {
-    return await this.authUsecase.disableTwoFactor(userId, dto.code)
+    return await this.authUsecase.disableTwoFactor(claims, userId, dto.code)
   }
 }
 

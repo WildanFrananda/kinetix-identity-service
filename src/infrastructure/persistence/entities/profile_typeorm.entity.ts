@@ -49,13 +49,13 @@ class ProfileTypeormEntity {
   avatarUrl?: string
 
   @Column({ type: "double precision", nullable: true })
-  latitude?: number
+  latitude?: number | null
 
   @Column({ type: "double precision", nullable: true })
-  longitude?: number
+  longitude?: number | null
 
   @Column({ type: "timestamptz", nullable: true })
-  geocodedAt?: Date
+  geocodedAt?: Date | null
 
   @CreateDateColumn({ type: "timestamptz" })
   createdAt!: Date

@@ -4,8 +4,11 @@ import { Repository } from "typeorm"
 import MerchantEntity from "../../../domain/entities/merchant.entity"
 import MerchantChange from "../../../domain/entities/merchant_change.entity"
 import MerchantChangePage from "../../../domain/entities/merchant_change_page.entity"
+import MissingReferenceError from "../../../domain/errors/missing_reference.error"
+import RecordConflictError from "../../../domain/errors/record_conflict.error"
 import MerchantRepositoryPort from "../../../domain/ports/merchant_repository.port"
 import MerchantTypeormEntity from "../entities/merchant_typeorm.entity"
+import { isForeignKeyViolation, isUniqueViolation } from "../sql_state"
 
 @Injectable()
 class TypeormMerchantRepositoryAdapter implements MerchantRepositoryPort {
@@ -21,46 +24,12 @@ class TypeormMerchantRepositoryAdapter implements MerchantRepositoryPort {
 
   async findByUserId(userId: number): Promise<MerchantEntity | null> {
     const record = await this.repo.findOne({ where: { userId } })
-    if (!record) return null
-    return new MerchantEntity(
-      record.id,
-      record.userId,
-      record.storeName,
-      record.slug,
-      record.businessRegistrationNumber,
-      record.taxId,
-      record.status,
-      record.description,
-      record.verifiedAt,
-      record.streetAddress,
-      record.city,
-      record.postalCode,
-      record.latitude === null || record.latitude === undefined ? undefined : Number(record.latitude),
-      record.longitude === null || record.longitude === undefined ? undefined : Number(record.longitude),
-      record.geocodedAt
-    )
+    return record ? this.toEntity(record) : null
   }
 
   async findBySlug(slug: string): Promise<MerchantEntity | null> {
     const record = await this.repo.findOne({ where: { slug } })
-    if (!record) return null
-    return new MerchantEntity(
-      record.id,
-      record.userId,
-      record.storeName,
-      record.slug,
-      record.businessRegistrationNumber,
-      record.taxId,
-      record.status,
-      record.description,
-      record.verifiedAt,
-      record.streetAddress,
-      record.city,
-      record.postalCode,
-      record.latitude === null || record.latitude === undefined ? undefined : Number(record.latitude),
-      record.longitude === null || record.longitude === undefined ? undefined : Number(record.longitude),
-      record.geocodedAt
-    )
+    return record ? this.toEntity(record) : null
   }
 
   async findChangedSince(
@@ -127,7 +96,7 @@ class TypeormMerchantRepositoryAdapter implements MerchantRepositoryPort {
       userId: merchant.userId,
       storeName: merchant.storeName,
       slug: merchant.slug,
-      description: merchant.description,
+      description: merchant.description ?? null,
       businessRegistrationNumber: merchant.businessRegistrationNumber,
       taxId: merchant.taxId,
       status: merchant.status,
@@ -135,28 +104,28 @@ class TypeormMerchantRepositoryAdapter implements MerchantRepositoryPort {
       streetAddress: merchant.streetAddress,
       city: merchant.city,
       postalCode: merchant.postalCode,
-      latitude: merchant.latitude,
-      longitude: merchant.longitude,
-      geocodedAt: merchant.geocodedAt
+      latitude: merchant.latitude ?? null,
+      longitude: merchant.longitude ?? null,
+      geocodedAt: merchant.geocodedAt ?? null
     })
-    const saved = await this.repo.save(entity)
-    return new MerchantEntity(
-      saved.id,
-      saved.userId,
-      saved.storeName,
-      saved.slug,
-      saved.businessRegistrationNumber,
-      saved.taxId,
-      saved.status,
-      saved.description,
-      saved.verifiedAt,
-      saved.streetAddress,
-      saved.city,
-      saved.postalCode,
-      saved.latitude === null || saved.latitude === undefined ? undefined : Number(saved.latitude),
-      saved.longitude === null || saved.longitude === undefined ? undefined : Number(saved.longitude),
-      saved.geocodedAt
-    )
+
+    let saved: MerchantTypeormEntity
+    try {
+      saved = await this.repo.save(entity)
+    } catch (error) {
+      if (isForeignKeyViolation(error)) {
+        throw new MissingReferenceError(`No account with ID ${merchant.userId}`)
+      }
+      if (isUniqueViolation(error)) {
+        throw new RecordConflictError(
+          `The merchant of account ${merchant.userId} or its store slug was written by another ` +
+            "request at the same time; retry the approval"
+        )
+      }
+      throw error
+    }
+
+    return this.toEntity(saved)
   }
 
   private toEntity(record: MerchantTypeormEntity): MerchantEntity {
@@ -168,14 +137,14 @@ class TypeormMerchantRepositoryAdapter implements MerchantRepositoryPort {
       record.businessRegistrationNumber,
       record.taxId,
       record.status,
-      record.description,
+      record.description ?? undefined,
       record.verifiedAt,
       record.streetAddress,
       record.city,
       record.postalCode,
       record.latitude === null || record.latitude === undefined ? undefined : Number(record.latitude),
       record.longitude === null || record.longitude === undefined ? undefined : Number(record.longitude),
-      record.geocodedAt
+      record.geocodedAt ?? undefined
     )
   }
 }

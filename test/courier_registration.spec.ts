@@ -39,11 +39,14 @@ describe("CourierRegistrationUsecaseService Unit Tests", () => {
   let mockProfile: any
   let mockFleet: any
   let mockUserRepo: any
+  let mockApplications: any
 
   beforeEach(() => {
     mockAuth = {
       register: jest.fn().mockResolvedValue(session()),
-      login: jest.fn().mockResolvedValue(session())
+      login: jest.fn(),
+      verifyPassword: jest.fn().mockResolvedValue(new UserEntity(7, "driver@kinetix.test", "hash", "customer")),
+      startSession: jest.fn().mockResolvedValue(session())
     }
     mockProfile = {
       updateProfile: jest.fn().mockResolvedValue(undefined)
@@ -57,12 +60,18 @@ describe("CourierRegistrationUsecaseService Unit Tests", () => {
       findById: jest.fn(),
       save: jest.fn()
     }
+    mockApplications = {
+      recordFiled: jest.fn().mockResolvedValue(undefined),
+      recordApproved: jest.fn(),
+      list: jest.fn()
+    }
 
     service = new CourierRegistrationUsecaseService(
       mockAuth,
       mockProfile,
       mockFleet,
-      mockUserRepo
+      mockUserRepo,
+      mockApplications
     )
   })
 
@@ -104,6 +113,22 @@ describe("CourierRegistrationUsecaseService Unit Tests", () => {
       expect(JSON.stringify(mockProfile.updateProfile.mock.calls)).not.toContain("fixture-password-not-real")
     })
 
+    it("records the application, so an admin can find it waiting", async () => {
+      await service.register(input())
+
+      expect(mockApplications.recordFiled).toHaveBeenCalledWith({
+        userId: 7,
+        principalId: PRINCIPAL,
+        driverId: 42
+      })
+    })
+
+    it("looks the email up in lower case", async () => {
+      await service.register(input({ email: "Driver@Kinetix.Test" }))
+
+      expect(mockUserRepo.findByEmail).toHaveBeenCalledWith("driver@kinetix.test")
+    })
+
     it("files the vehicle against the principal the session names", async () => {
       await service.register(input())
 
@@ -123,7 +148,8 @@ describe("CourierRegistrationUsecaseService Unit Tests", () => {
     it("signs the account in and carries on, rather than refusing the email", async () => {
       const res = await service.register(input())
 
-      expect(mockAuth.login).toHaveBeenCalled()
+      expect(mockAuth.verifyPassword).toHaveBeenCalled()
+      expect(mockAuth.startSession).toHaveBeenCalled()
       expect(mockAuth.register).not.toHaveBeenCalled()
       expect(mockFleet.registerDriver).toHaveBeenCalled()
       expect(res.driverId).toBe(42)
@@ -138,17 +164,41 @@ describe("CourierRegistrationUsecaseService Unit Tests", () => {
     })
 
     it("refuses when the password does not match the account that holds that email", async () => {
-      mockAuth.login.mockRejectedValue(new UnauthorizedException("Invalid email or password"))
+      mockAuth.verifyPassword.mockRejectedValue(new UnauthorizedException("Invalid email or password"))
 
       await expect(service.register(input())).rejects.toBeInstanceOf(ConflictException)
       expect(mockFleet.registerDriver).not.toHaveBeenCalled()
     })
 
     it("refuses to resume an account with two-factor enabled", async () => {
-      mockAuth.login.mockResolvedValue({ mfaRequired: true, challengeToken: "c", expiresIn: 300 })
+      mockAuth.verifyPassword.mockResolvedValue(
+        new UserEntity(7, "driver@kinetix.test", "hash", "customer", true)
+      )
 
       await expect(service.register(input())).rejects.toBeInstanceOf(ConflictException)
+      expect(mockAuth.startSession).not.toHaveBeenCalled()
       expect(mockFleet.registerDriver).not.toHaveBeenCalled()
+    })
+
+    it.each(["seller", "admin"] as const)(
+      "refuses to file a vehicle under a %s's account, even with its password",
+      async (role) => {
+        mockAuth.verifyPassword.mockResolvedValue(new UserEntity(7, "driver@kinetix.test", "hash", role))
+
+        await expect(service.register(input())).rejects.toThrow(`That account is a ${role}`)
+        expect(mockAuth.startSession).not.toHaveBeenCalled()
+        expect(mockProfile.updateProfile).not.toHaveBeenCalled()
+        expect(mockFleet.registerDriver).not.toHaveBeenCalled()
+      }
+    )
+
+    it("resumes an account that is already a courier", async () => {
+      mockAuth.verifyPassword.mockResolvedValue(new UserEntity(7, "driver@kinetix.test", "hash", "courier"))
+      mockFleet.registerDriver.mockResolvedValue({ driverId: 42, alreadyRegistered: true })
+
+      const res = await service.register(input())
+
+      expect(res.driverId).toBe(42)
     })
   })
 
@@ -163,6 +213,30 @@ describe("CourierRegistrationUsecaseService Unit Tests", () => {
       )
 
       await expect(service.register(input())).rejects.toBeInstanceOf(BadRequestException)
+    })
+
+    it("says the account exists when the fleet refuses, so the retry uses the same password", async () => {
+      mockFleet.registerDriver.mockRejectedValue(
+        new FleetRegistryError({
+          kind: "refused",
+          code: "BLANK_VEHICLE_PLATE",
+          message: "vehicle_plate is required: the fleet files a vehicle"
+        })
+      )
+
+      const refusal: BadRequestException = await service.register(input()).then(
+        () => {
+          throw new Error("the registration was expected to be refused")
+        },
+        (error: BadRequestException) => error
+      )
+
+      const body = refusal.getResponse() as Record<string, unknown>
+      expect(body.error).toBe("BLANK_VEHICLE_PLATE")
+      expect(body.accountExists).toBe(true)
+      expect(String(body.message)).toContain("Your account exists")
+      expect(String(body.message)).toContain("same email and password")
+      expect(mockApplications.recordFiled).not.toHaveBeenCalled()
     })
 
     it("reports an unknown outcome as unavailable, so the applicant retries", async () => {

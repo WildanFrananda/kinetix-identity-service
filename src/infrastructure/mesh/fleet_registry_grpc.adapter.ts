@@ -1,4 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common"
+import { ConfigService } from "@nestjs/config"
 import { loadPackageDefinition, Client, Metadata, status } from "@grpc/grpc-js"
 import { loadSync } from "@grpc/proto-loader"
 import type { ServiceError } from "@grpc/grpc-js"
@@ -10,6 +11,7 @@ import type {
   FleetRegistration,
   RegisterDriverCommand
 } from "../../types/fleet.type"
+import { requiredSetting } from "../config/required_setting"
 import { contractProto, contractProtoRoot } from "./contract_proto"
 import { loadServiceIdentity, meshClientCredentials } from "./service_identity"
 
@@ -32,7 +34,12 @@ type ActivateReply = {
 @Injectable()
 class FleetRegistryGrpcAdapter implements FleetRegistryPort {
   private readonly logger = new Logger(FleetRegistryGrpcAdapter.name)
+  private readonly host: string
   private client: Client | null = null
+
+  constructor(config: ConfigService) {
+    this.host = requiredSetting("MATCHING_GRPC_HOST", config.get<string>("MATCHING_GRPC_HOST")).trim()
+  }
 
   async registerDriver(command: RegisterDriverCommand): Promise<FleetRegistration> {
     const reply = await this.call<RegisterReply>("RegisterDriver", {
@@ -143,17 +150,6 @@ class FleetRegistryGrpcAdapter implements FleetRegistryPort {
       return this.client
     }
 
-    const host = process.env.MATCHING_GRPC_HOST
-    if (!host) {
-      throw new FleetRegistryError({
-        kind: "refused",
-        code: "FLEET_NOT_CONFIGURED",
-        message:
-          "MATCHING_GRPC_HOST is unset, so no vehicle can be filed. Refused rather than guessed: " +
-          "a guessed address registers couriers into silence."
-      })
-    }
-
     let definition
     try {
       definition = loadSync(contractProto("fleet/v1/registry.proto"), {
@@ -179,7 +175,7 @@ class FleetRegistryGrpcAdapter implements FleetRegistryPort {
     }
 
     const credentials = meshClientCredentials(loadServiceIdentity())
-    this.client = new loaded.fleet.v1.FleetRegistryService(host, credentials)
+    this.client = new loaded.fleet.v1.FleetRegistryService(this.host, credentials)
 
     return this.client
   }

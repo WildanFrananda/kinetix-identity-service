@@ -1,15 +1,27 @@
 import { Injectable, Logger } from "@nestjs/common"
+import { ConfigService } from "@nestjs/config"
 import GeocodingProviderPort from "../../domain/ports/geocoding_provider.port"
 import type { GeocodeFailure, GeocodePrecision, ProviderPoint } from "../../types/geo.type"
-
-const DEFAULT_BASE = "https://nominatim.openstreetmap.org"
+import { requiredSetting } from "../config/required_setting"
 
 @Injectable()
 class NominatimGeocodingAdapter implements GeocodingProviderPort {
   private readonly logger = new Logger(NominatimGeocodingAdapter.name)
+  private readonly baseUrl: string
+  private readonly userAgent: string
+
+  constructor(config: ConfigService) {
+    const baseUrl = requiredSetting("GEOCODER_BASE_URL", config.get<string>("GEOCODER_BASE_URL")).trim()
+    if (!URL.canParse(baseUrl)) {
+      throw new Error(`GEOCODER_BASE_URL is "${baseUrl}", which is not a URL.`)
+    }
+
+    this.baseUrl = baseUrl.replace(/\/+$/u, "")
+    this.userAgent = requiredSetting("GEOCODER_USER_AGENT", config.get<string>("GEOCODER_USER_AGENT")).trim()
+  }
 
   async lookup(query: string): Promise<ProviderPoint | GeocodeFailure> {
-    const url = new URL(`${this.baseUrl()}/search`)
+    const url = new URL(`${this.baseUrl}/search`)
     url.searchParams.set("q", query)
     url.searchParams.set("format", "jsonv2")
     url.searchParams.set("limit", "1")
@@ -20,7 +32,7 @@ class NominatimGeocodingAdapter implements GeocodingProviderPort {
     try {
       response = await fetch(url, {
         headers: {
-          "user-agent": this.userAgent(),
+          "user-agent": this.userAgent,
           "accept-language": "id,en"
         },
         signal: AbortSignal.timeout(8000)
@@ -97,16 +109,6 @@ class NominatimGeocodingAdapter implements GeocodingProviderPort {
   private unavailable(query: string, detail: string): GeocodeFailure {
     this.logger.error(`could not geocode ${JSON.stringify(query)}: ${detail}`)
     return "PROVIDER_UNAVAILABLE"
-  }
-
-  private baseUrl(): string {
-    const configured = process.env.GEOCODER_BASE_URL
-    return configured && configured.length > 0 ? configured : DEFAULT_BASE
-  }
-
-  private userAgent(): string {
-    const configured = process.env.GEOCODER_USER_AGENT
-    return configured && configured.length > 0 ? configured : "kinetix-identity-service"
   }
 }
 

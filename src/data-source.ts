@@ -10,7 +10,12 @@ import { ProfileCoordinates1789200000000 } from "./migrations/1789200000000-Prof
 import { MerchantStoreAddress1789300000000 } from "./migrations/1789300000000-MerchantStoreAddress"
 import { MerchantCursorPrecision1789400000000 } from "./migrations/1789400000000-MerchantCursorPrecision"
 import { MerchantChangeTransaction1789500000000 } from "./migrations/1789500000000-MerchantChangeTransaction"
+import { CaseInsensitiveEmail1789600000000 } from "./migrations/1789600000000-CaseInsensitiveEmail"
+import { TwoFactorLastStep1789610000000 } from "./migrations/1789610000000-TwoFactorLastStep"
+import { CourierApplications1789620000000 } from "./migrations/1789620000000-CourierApplications"
+import { NoPlaceholderStoreDescription1789630000000 } from "./migrations/1789630000000-NoPlaceholderStoreDescription"
 
+import CourierApplicationTypeormEntity from "./infrastructure/persistence/entities/courier_application_typeorm.entity"
 import GeocodedAddressTypeormEntity from "./infrastructure/persistence/entities/geocoded_address_typeorm.entity"
 import MerchantTypeormEntity from "./infrastructure/persistence/entities/merchant_typeorm.entity"
 import MerchantVerificationTypeormEntity from "./infrastructure/persistence/entities/merchant_verification_typeorm.entity"
@@ -20,19 +25,15 @@ import ProfileTypeormEntity from "./infrastructure/persistence/entities/profile_
 import RefreshTokenTypeormEntity from "./infrastructure/persistence/entities/refresh_token_typeorm.entity"
 import RevokedAccessTokenTypeormEntity from "./infrastructure/persistence/entities/revoked_access_token_typeorm.entity"
 import UserTypeormEntity from "./infrastructure/persistence/entities/user_typeorm.entity"
-
-const password = process.env.DB_PASSWORD
-if (!password) {
-  throw new Error("DB_PASSWORD is required and has no default. Set it in the environment.")
-}
+import { positiveIntegerSetting, requiredSetting } from "./infrastructure/config/required_setting"
 
 export default new DataSource({
   type: "postgres",
-  host: process.env.DB_HOST ?? "localhost",
-  port: Number(process.env.DB_PORT ?? 5432),
-  username: process.env.DB_USERNAME ?? "kinetix_identity_app",
-  password,
-  database: process.env.DB_DATABASE ?? "kinetix_identity_dev",
+  host: requiredSetting("DB_HOST", process.env.DB_HOST),
+  port: positiveIntegerSetting("DB_PORT", process.env.DB_PORT),
+  username: requiredSetting("DB_USERNAME", process.env.DB_USERNAME),
+  password: requiredSetting("DB_PASSWORD", process.env.DB_PASSWORD),
+  database: requiredSetting("DB_DATABASE", process.env.DB_DATABASE),
   entities: [
     PrincipalTypeormEntity,
     PrincipalAliasTypeormEntity,
@@ -42,7 +43,8 @@ export default new DataSource({
     ProfileTypeormEntity,
     MerchantVerificationTypeormEntity,
     MerchantTypeormEntity,
-    GeocodedAddressTypeormEntity
+    GeocodedAddressTypeormEntity,
+    CourierApplicationTypeormEntity
   ],
   migrations: [
     InitialSchema1788322826135,
@@ -54,7 +56,11 @@ export default new DataSource({
     ProfileCoordinates1789200000000,
     MerchantStoreAddress1789300000000,
     MerchantCursorPrecision1789400000000,
-    MerchantChangeTransaction1789500000000
+    MerchantChangeTransaction1789500000000,
+    CaseInsensitiveEmail1789600000000,
+    TwoFactorLastStep1789610000000,
+    CourierApplications1789620000000,
+    NoPlaceholderStoreDescription1789630000000
   ],
   synchronize: false
 })

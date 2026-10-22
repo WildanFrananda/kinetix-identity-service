@@ -25,26 +25,46 @@ Enterprise Identity, Authentication, User Profile, 2FA, OAuth, Merchant Store Ma
 
 ## 📡 API Endpoints Matrix
 
-### 1. HTTP REST Endpoints (NestJS Fastify Adapter :5000 / :5001)
+### 1. HTTP REST Endpoints (Fastify on `PORT`, reached through the gateway)
 
-| Method | Endpoint | Access Guard | Description |
+Rate limits are per client address: identity trusts exactly one internal hop, the gateway, to name the client.
+
+| Method | Endpoint | Access | Description |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/auth/register` | Rate Limited (5/min) | Register new User (Customer, Seller, Courier, Admin) |
-| `POST` | `/api/auth/login` | Rate Limited (5/min) | Authenticate user & issue signed JWT Access Token |
-| `POST` | `/api/auth/2fa/setup/:id` | JWT Protected | Setup 2FA TOTP secret & QR code |
-| `POST` | `/api/auth/oauth/callback` | Public | Google / GitHub OAuth callback authentication |
-| `GET` | `/api/users/:id/profile` | JWT Protected | Retrieve User Profile and Shipping Address |
-| `PUT` | `/api/users/:id/profile` | JWT Protected | Update User Profile, Address, or Avatar |
-| `POST` | `/api/sellers/:id/onboard` | JWT Protected | Submit seller onboarding request (Status: `pending`) |
-| `POST` | `/api/sellers/:id/verify` | Admin Guard | Approve seller verification & issue active `MerchantEntity` |
+| `POST` | `/api/v1/auth/register` | Public, 5/min | Register a customer account |
+| `POST` | `/api/v1/auth/login` | Public, 5/min | Sign in; answers tokens, or a two-factor challenge |
+| `POST` | `/api/v1/auth/2fa/verify` | Public, 5/min | Answer a two-factor challenge once |
+| `POST` | `/api/v1/auth/refresh` | Public, 10/min | Rotate a refresh token |
+| `POST` | `/api/v1/auth/logout` | Signed in | Revoke the access token and the caller's session (or all its sessions) |
+| `GET` | `/api/v1/auth/me` | Signed in | The caller's claims |
+| `POST` | `/api/v1/auth/2fa/setup/:id` | Owner only | Issue a TOTP secret |
+| `POST` | `/api/v1/auth/2fa/enable/:id` | Owner only, 5/min | Turn two-factor on; ends every other session |
+| `POST` | `/api/v1/auth/2fa/disable/:id` | Owner only, 5/min | Turn two-factor off and forget the secret; ends every other session |
+| `GET` | `/api/v1/users/:id/profile` | Self or admin | Read a profile |
+| `PUT` | `/api/v1/users/:id/profile` | Self or admin | Write a profile; a changed address is geocoded |
+| `POST` | `/api/v1/sellers/:id/onboard` | Self or admin | File a seller application (`pending`) |
+| `GET` | `/api/v1/sellers/:id/application` | Self or admin | Read a seller application and its status |
+| `GET` | `/api/v1/sellers/applications` | Admin | List seller applications (`status`, `limit`, `after`) |
+| `POST` | `/api/v1/sellers/:id/verify` | Admin | Approve a pending application |
+| `POST` | `/api/v1/sellers/:id/reject` | Admin | Reject a pending application |
+| `POST` | `/api/v1/couriers/register` | Public, 5/min | Create a courier account and file its vehicle |
+| `GET` | `/api/v1/couriers/applications` | Admin | List courier applications (`status`, `limit`, `after`) |
+| `POST` | `/api/v1/couriers/:principalId/approve` | Admin | Approve a courier and activate it in the fleet |
+| `GET` | `/.well-known/jwks.json` | Public | The keys tokens are verified with |
+| `GET` | `/health`, `/health/ready` | Public | Liveness and readiness |
 
-### 2. gRPC RPC Protocol (`proto/identity/v1/identity_service.proto` :50052)
+### 2. gRPC (`identity.v1.IdentityService`, `geo.v1.GeocodingService` on `GRPC_PORT`, mTLS)
 
-| RPC Name | Input Message | Output Message | Consumer Services |
-| :--- | :--- | :--- | :--- |
-| `GetUserProfile` | `GetUserProfileRequest` (`user_id`) | `GetUserProfileResponse` | `kinetix-warehouse-service`, `kinetix-matching-service` |
-| `GetMerchantInfo` | `GetMerchantInfoRequest` (`user_id`) | `GetMerchantInfoResponse` | `kinetix-warehouse-service` |
-| `ValidateToken` | `ValidateTokenRequest` (`access_token`) | `ValidateTokenResponse` | `kinetix-api-gateway` |
+The contracts live in `kinetix-contracts`; each caller reaches only the methods `GRPC_ALLOWED_CALLERS` grants it.
+
+| RPC | Callers |
+| :--- | :--- |
+| `ResolvePrincipal` | order |
+| `GetUserProfile` | order, notification |
+| `GetMerchantInfo` | order, warehouse, catalog, pricing |
+| `MerchantsChangedSince` | search |
+| `GetPrincipal`, `ValidateToken` | nobody |
+| `geo.v1.GeocodingService/GeocodeAddress` | order |
 
 ---
 
@@ -120,5 +140,6 @@ bun run test
 bun run build
 
 # 3. Start Service
-DB_HOST=localhost DB_PORT=5432 DB_DATABASE=kinetix_identity_dev DB_USERNAME=postgres DB_PASSWORD=postgres PORT=5000 bun run dist/main.js
+# Every variable in .env.example is required; the service refuses to start without one.
+bun run dist/main.js
 ```

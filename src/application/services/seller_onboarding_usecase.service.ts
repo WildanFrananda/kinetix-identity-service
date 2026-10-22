@@ -8,8 +8,16 @@ import UserRepositoryPort from "../../domain/ports/user_repository.port"
 import OnboardSellerInputDto from "../dto/onboard_seller_input.dto"
 import GeocodingUsecaseService from "./geocoding_usecase.service"
 import PrincipalResolverService from "./principal_resolver.service"
+import type {
+  ApplicationPage,
+  ApplicationQuery,
+  SellerApplicationStatus,
+  SellerApplicationView
+} from "../../types/application.type"
 
 const MERCHANT_ALIAS_SERVICE = "identity-merchant"
+
+const UNTOUCHED_BY_APPROVAL: ReadonlyArray<MerchantEntity["status"]> = ["active", "suspended"]
 
 @Injectable()
 class SellerOnboardingUsecaseService {
@@ -101,11 +109,31 @@ class SellerOnboardingUsecaseService {
     }
   }
 
-  async approveVerification(userId: number): Promise<MerchantEntity> {
+  async applicationOf(userId: number): Promise<MerchantVerificationEntity> {
     const verification: MerchantVerificationEntity | null = await this.verificationRepository.findByUserId(userId)
     if (!verification) {
-      throw new NotFoundException(`No pending seller verification found for User ID ${userId}`)
+      throw new NotFoundException(`No seller application found for User ID ${userId}`)
     }
+
+    return verification
+  }
+
+  async listApplications(
+    query: ApplicationQuery<SellerApplicationStatus>
+  ): Promise<ApplicationPage<SellerApplicationView>> {
+    return await this.verificationRepository.list(query)
+  }
+
+  async rejectVerification(userId: number): Promise<MerchantVerificationEntity> {
+    const verification: MerchantVerificationEntity = await this.pendingApplicationOf(userId)
+
+    verification.status = "rejected"
+
+    return await this.verificationRepository.save(verification)
+  }
+
+  async approveVerification(userId: number): Promise<MerchantEntity> {
+    const verification: MerchantVerificationEntity = await this.pendingApplicationOf(userId)
 
     const user: UserEntity | null = await this.userRepository.findById(userId)
     if (!user) {
@@ -117,6 +145,12 @@ class SellerOnboardingUsecaseService {
     const verifiedAt = new Date()
 
     let merchant: MerchantEntity | null = await this.merchantRepository.findByUserId(userId)
+    if (merchant && UNTOUCHED_BY_APPROVAL.includes(merchant.status)) {
+      throw new ConflictException(
+        `The merchant of account ${userId} is ${merchant.status}; an approval does not change that`
+      )
+    }
+
     if (!merchant) {
       merchant = new MerchantEntity(
         0,
@@ -126,7 +160,7 @@ class SellerOnboardingUsecaseService {
         verification.businessRegistrationNumber,
         verification.taxId,
         "verified",
-        "Official Merchant Store",
+        undefined,
         verifiedAt,
         verification.streetAddress,
         verification.city,
@@ -158,6 +192,17 @@ class SellerOnboardingUsecaseService {
     await this.verificationRepository.save(verification)
 
     return merchant
+  }
+
+  private async pendingApplicationOf(userId: number): Promise<MerchantVerificationEntity> {
+    const verification: MerchantVerificationEntity = await this.applicationOf(userId)
+    if (verification.status !== "pending") {
+      throw new ConflictException(
+        `The seller application of account ${userId} is ${verification.status}, not pending`
+      )
+    }
+
+    return verification
   }
 
   private requireMayBecomeSeller(user: UserEntity): void {

@@ -1,6 +1,7 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm"
+import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm"
 
 @Entity("users")
+@Index("UQ_users_email_lower", { synchronize: false })
 class UserTypeormEntity {
   @PrimaryGeneratedColumn()
   id!: number
@@ -17,8 +18,11 @@ class UserTypeormEntity {
   @Column({ default: false })
   isTwoFactorEnabled!: boolean
 
-  @Column({ nullable: true })
-  twoFactorSecret?: string
+  @Column({ type: "varchar", nullable: true })
+  twoFactorSecret!: string | null
+
+  @Column({ type: "integer", nullable: true })
+  twoFactorLastStep!: number | null
 
   @CreateDateColumn()
   createdAt!: Date
