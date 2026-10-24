@@ -21,7 +21,8 @@ class RolesGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>()
-    const role: string | undefined = request.user?.role
+    const claims = request.user
+    const role: string | undefined = claims?.token_use === "access" ? claims.role : undefined
 
     if (!role || !required.includes(role)) {
       throw new ForbiddenException("This account does not have access to this resource")

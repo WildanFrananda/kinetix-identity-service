@@ -1,6 +1,10 @@
 import { Counter, Gauge, Histogram, Registry } from "prom-client"
 import { SERVICE_NAME, SERVICE_VERSION } from "./build_identity"
+import { ADMIN_ACTION_OUTCOMES, ADMIN_ACTIONS } from "./admin_actions"
+import type { AdminAction, AdminActionOutcome } from "../../types/admin_audit.type"
+import type { ClientRefusalReason, ClientRefusalSeries } from "../../types/client.type"
 import type { GrpcServerCallObservation, HttpRequestObservation } from "../../types/metrics.type"
+import type { SignInRole, SignInStage } from "../../types/sign_in_attempt.type"
 
 const metricsRegistry = new Registry()
 
@@ -37,7 +41,44 @@ const buildInfo = new Gauge({
   registers: [metricsRegistry]
 })
 
+const signInFailuresTotal = new Counter({
+  name: "kinetix_identity_sign_in_failures_total",
+  help: "Wrong passwords and wrong or reused two-factor codes, by stage and by whether the account is an admin.",
+  labelNames: ["stage", "role"] as const,
+  registers: [metricsRegistry]
+})
+
+const adminActionsTotal = new Counter({
+  name: "kinetix_admin_actions_total",
+  help: "Admin uses of identity's endpoints, by action and by whether it was done, refused or failed.",
+  labelNames: ["action", "outcome"] as const,
+  registers: [metricsRegistry]
+})
+
+const clientProofRefusalsTotal = new Counter({
+  name: "kinetix_identity_client_proof_refusals_total",
+  help: "Sign-ins and renewals refused for their client: unknown, unnamed, unproven, or not the session's.",
+  labelNames: ["client", "reason"] as const,
+  registers: [metricsRegistry]
+})
+
+const SIGN_IN_STAGES: readonly SignInStage[] = ["password", "two_factor"]
+
+const SIGN_IN_ROLES: readonly SignInRole[] = ["admin", "other"]
+
 buildInfo.set({ service: SERVICE_NAME, version: SERVICE_VERSION }, 1)
+
+for (const stage of SIGN_IN_STAGES) {
+  for (const role of SIGN_IN_ROLES) {
+    signInFailuresTotal.inc({ stage, role }, 0)
+  }
+}
+
+for (const action of ADMIN_ACTIONS) {
+  for (const outcome of ADMIN_ACTION_OUTCOMES) {
+    adminActionsTotal.inc({ action, outcome }, 0)
+  }
+}
 
 function recordHttpRequest(observation: HttpRequestObservation): void {
   const status = String(observation.status)
@@ -59,4 +100,31 @@ function declareGrpcMethod(grpcMethod: string): void {
   grpcServerCallsTotal.inc({ grpc_method: grpcMethod, grpc_code: "OK" }, 0)
 }
 
-export { declareGrpcMethod, metricsRegistry, recordGrpcServerCall, recordHttpRequest }
+function recordSignInFailure(stage: SignInStage, role: SignInRole): void {
+  signInFailuresTotal.inc({ stage, role })
+}
+
+function recordAdminAction(action: AdminAction, outcome: AdminActionOutcome): void {
+  adminActionsTotal.inc({ action, outcome })
+}
+
+function declareClientRefusals(series: readonly ClientRefusalSeries[]): void {
+  for (const { client, reason } of series) {
+    clientProofRefusalsTotal.inc({ client, reason }, 0)
+  }
+}
+
+function recordClientRefusal(client: string, reason: ClientRefusalReason): void {
+  clientProofRefusalsTotal.inc({ client, reason })
+}
+
+export {
+  declareClientRefusals,
+  declareGrpcMethod,
+  metricsRegistry,
+  recordAdminAction,
+  recordClientRefusal,
+  recordGrpcServerCall,
+  recordHttpRequest,
+  recordSignInFailure
+}

@@ -14,7 +14,10 @@ import { CaseInsensitiveEmail1789600000000 } from "./migrations/1789600000000-Ca
 import { TwoFactorLastStep1789610000000 } from "./migrations/1789610000000-TwoFactorLastStep"
 import { CourierApplications1789620000000 } from "./migrations/1789620000000-CourierApplications"
 import { NoPlaceholderStoreDescription1789630000000 } from "./migrations/1789630000000-NoPlaceholderStoreDescription"
+import { SignInAttempts1789640000000 } from "./migrations/1789640000000-SignInAttempts"
+import { RefreshTokenClient1789650000000 } from "./migrations/1789650000000-RefreshTokenClient"
 
+import AccountSignInAttemptTypeormEntity from "./infrastructure/persistence/entities/account_sign_in_attempt_typeorm.entity"
 import CourierApplicationTypeormEntity from "./infrastructure/persistence/entities/courier_application_typeorm.entity"
 import GeocodedAddressTypeormEntity from "./infrastructure/persistence/entities/geocoded_address_typeorm.entity"
 import MerchantTypeormEntity from "./infrastructure/persistence/entities/merchant_typeorm.entity"
@@ -24,6 +27,7 @@ import PrincipalTypeormEntity from "./infrastructure/persistence/entities/princi
 import ProfileTypeormEntity from "./infrastructure/persistence/entities/profile_typeorm.entity"
 import RefreshTokenTypeormEntity from "./infrastructure/persistence/entities/refresh_token_typeorm.entity"
 import RevokedAccessTokenTypeormEntity from "./infrastructure/persistence/entities/revoked_access_token_typeorm.entity"
+import TwoFactorChallengeAttemptTypeormEntity from "./infrastructure/persistence/entities/two_factor_challenge_attempt_typeorm.entity"
 import UserTypeormEntity from "./infrastructure/persistence/entities/user_typeorm.entity"
 import { positiveIntegerSetting, requiredSetting } from "./infrastructure/config/required_setting"
 
@@ -44,7 +48,9 @@ export default new DataSource({
     MerchantVerificationTypeormEntity,
     MerchantTypeormEntity,
     GeocodedAddressTypeormEntity,
-    CourierApplicationTypeormEntity
+    CourierApplicationTypeormEntity,
+    AccountSignInAttemptTypeormEntity,
+    TwoFactorChallengeAttemptTypeormEntity
   ],
   migrations: [
     InitialSchema1788322826135,
@@ -60,7 +66,9 @@ export default new DataSource({
     CaseInsensitiveEmail1789600000000,
     TwoFactorLastStep1789610000000,
     CourierApplications1789620000000,
-    NoPlaceholderStoreDescription1789630000000
+    NoPlaceholderStoreDescription1789630000000,
+    SignInAttempts1789640000000,
+    RefreshTokenClient1789650000000
   ],
   synchronize: false
 })

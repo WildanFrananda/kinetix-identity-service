@@ -195,6 +195,35 @@ describe("identity's HTTP routes", () => {
     })
   })
 
+  describe("a profile update", () => {
+    it.each(["fullName", "phoneNumber", "streetAddress", "city", "postalCode"])(
+      "refuses null for %s with 400, before anything is written",
+      async (field) => {
+        const response = await send(app, {
+          method: "PUT",
+          url: "/api/v1/users/8/profile",
+          payload: { [field]: null },
+          headers: { [CALLER_HEADER]: "customer8" }
+        })
+
+        expect(response.statusCode).toBe(400)
+        expect(profiles.updateProfile).not.toHaveBeenCalled()
+      }
+    )
+
+    it("passes a null avatar through, which clears it", async () => {
+      const response = await send(app, {
+        method: "PUT",
+        url: "/api/v1/users/8/profile",
+        payload: { avatarUrl: null },
+        headers: { [CALLER_HEADER]: "customer8" }
+      })
+
+      expect(response.statusCode).toBe(200)
+      expect(profiles.updateProfile).toHaveBeenCalledWith(8, { avatarUrl: null })
+    })
+  })
+
   describe("logout", () => {
     it("takes no body", async () => {
       const response = await send(app, {
@@ -207,7 +236,7 @@ describe("identity's HTTP routes", () => {
       expect(auth.logout).toHaveBeenCalledWith(expect.objectContaining({ uid: 8 }), undefined)
     })
 
-    it.each([{ refreshToken: 5 }, { refreshToken: "" }, { refreshToken: "t", extra: "x" }])(
+    it.each([{ refreshToken: 5 }, { refreshToken: "" }, { refreshToken: null }, { refreshToken: "t", extra: "x" }])(
       "refuses the body %j with 400",
       async (payload) => {
         const response = await send(app, {

@@ -17,6 +17,7 @@ import TypeormUserRepositoryAdapter from "../src/infrastructure/persistence/adap
 import CourierApplicationTypeormEntity from "../src/infrastructure/persistence/entities/courier_application_typeorm.entity"
 import MerchantTypeormEntity from "../src/infrastructure/persistence/entities/merchant_typeorm.entity"
 import MerchantVerificationTypeormEntity from "../src/infrastructure/persistence/entities/merchant_verification_typeorm.entity"
+import PrincipalAliasTypeormEntity from "../src/infrastructure/persistence/entities/principal_alias_typeorm.entity"
 import PrincipalTypeormEntity from "../src/infrastructure/persistence/entities/principal_typeorm.entity"
 import ProfileTypeormEntity from "../src/infrastructure/persistence/entities/profile_typeorm.entity"
 import RefreshTokenTypeormEntity from "../src/infrastructure/persistence/entities/refresh_token_typeorm.entity"
@@ -227,19 +228,19 @@ describeWithDatabase("account writes against a real database", () => {
     it("ends the other sessions and keeps the caller's", async () => {
       const principalId = await aPrincipal()
       const subject = { id: 1, email: "s@kinetix.test", role: "customer" }
-      const current = await tokens.issuePair(subject, principalId)
-      const other = await tokens.issuePair(subject, principalId)
+      const current = await tokens.issuePair(subject, principalId, null)
+      const other = await tokens.issuePair(subject, principalId, null)
       const family = String((jwt.decode(current.accessToken) as jwt.JwtPayload).fam)
 
       await tokens.revokeOtherSessions(principalId, family, "two_factor_enabled")
 
-      await expect(tokens.rotate(other.refreshToken, subject)).rejects.toThrow("revoked")
-      await expect(tokens.rotate(current.refreshToken, subject)).resolves.toBeDefined()
+      await expect(tokens.rotate(other.refreshToken, subject, { kind: "unnamed" })).rejects.toThrow("revoked")
+      await expect(tokens.rotate(current.refreshToken, subject, { kind: "unnamed" })).resolves.toBeDefined()
     })
 
     it("logs out twice without an error", async () => {
       const principalId = await aPrincipal()
-      const pair = await tokens.issuePair({ id: 1, email: "l@kinetix.test", role: "customer" }, principalId)
+      const pair = await tokens.issuePair({ id: 1, email: "l@kinetix.test", role: "customer" }, principalId, null)
       const claims = await tokens.verifyAccess(pair.accessToken)
 
       await tokens.logout(claims)
@@ -305,6 +306,24 @@ describeWithDatabase("account writes against a real database", () => {
 
       expect(page.applications.map((application) => application.email)).toEqual(["pending@kinetix.test"])
       expect(page.nextAfterId).toBeNull()
+    })
+
+    it("names each seller applicant's principal, and null for one that has none", async () => {
+      const named = await anAccount("principal@kinetix.test")
+      const unnamed = await anAccount("noprincipal@kinetix.test")
+      const principalId = await aPrincipal()
+      await dataSource
+        .getRepository(PrincipalAliasTypeormEntity)
+        .save({ principalId, service: "identity", localId: String(named.id) })
+      await verifications.save(new MerchantVerificationEntity(0, named.id, "N", "brn", "tax", "pending"))
+      await verifications.save(new MerchantVerificationEntity(0, unnamed.id, "U", "brn", "tax", "pending"))
+
+      const page = await verifications.list({ status: null, afterId: 0, limit: 10 })
+
+      expect(page.applications).toEqual([
+        expect.objectContaining({ email: "principal@kinetix.test", principalId }),
+        expect.objectContaining({ email: "noprincipal@kinetix.test", principalId: null })
+      ])
     })
 
     it("pages seller applications", async () => {

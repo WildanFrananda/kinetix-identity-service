@@ -11,6 +11,8 @@ import PrincipalResolverService from "./principal_resolver.service"
 import type {
   ApplicationPage,
   ApplicationQuery,
+  ApprovedMerchant,
+  SellerApplication,
   SellerApplicationStatus,
   SellerApplicationView
 } from "../../types/application.type"
@@ -109,7 +111,11 @@ class SellerOnboardingUsecaseService {
     }
   }
 
-  async applicationOf(userId: number): Promise<MerchantVerificationEntity> {
+  async applicationOf(userId: number): Promise<SellerApplication> {
+    return await this.withPrincipal(await this.findApplication(userId))
+  }
+
+  private async findApplication(userId: number): Promise<MerchantVerificationEntity> {
     const verification: MerchantVerificationEntity | null = await this.verificationRepository.findByUserId(userId)
     if (!verification) {
       throw new NotFoundException(`No seller application found for User ID ${userId}`)
@@ -118,21 +124,26 @@ class SellerOnboardingUsecaseService {
     return verification
   }
 
+  private async withPrincipal(verification: MerchantVerificationEntity): Promise<SellerApplication> {
+    const principalId: string | null = await this.principalResolver.principalIdForUser(verification.userId)
+    return { ...verification, principalId }
+  }
+
   async listApplications(
     query: ApplicationQuery<SellerApplicationStatus>
   ): Promise<ApplicationPage<SellerApplicationView>> {
     return await this.verificationRepository.list(query)
   }
 
-  async rejectVerification(userId: number): Promise<MerchantVerificationEntity> {
+  async rejectVerification(userId: number): Promise<SellerApplication> {
     const verification: MerchantVerificationEntity = await this.pendingApplicationOf(userId)
 
     verification.status = "rejected"
 
-    return await this.verificationRepository.save(verification)
+    return await this.withPrincipal(await this.verificationRepository.save(verification))
   }
 
-  async approveVerification(userId: number): Promise<MerchantEntity> {
+  async approveVerification(userId: number): Promise<ApprovedMerchant> {
     const verification: MerchantVerificationEntity = await this.pendingApplicationOf(userId)
 
     const user: UserEntity | null = await this.userRepository.findById(userId)
@@ -191,11 +202,11 @@ class SellerOnboardingUsecaseService {
     verification.verifiedAt = verifiedAt
     await this.verificationRepository.save(verification)
 
-    return merchant
+    return { ...merchant, principalId }
   }
 
   private async pendingApplicationOf(userId: number): Promise<MerchantVerificationEntity> {
-    const verification: MerchantVerificationEntity = await this.applicationOf(userId)
+    const verification: MerchantVerificationEntity = await this.findApplication(userId)
     if (verification.status !== "pending") {
       throw new ConflictException(
         `The seller application of account ${userId} is ${verification.status}, not pending`

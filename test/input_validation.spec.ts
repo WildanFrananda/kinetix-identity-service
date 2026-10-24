@@ -1,6 +1,7 @@
 import { plainToInstance } from "class-transformer"
 import { validate } from "class-validator"
 import LoginInputDto from "../src/application/dto/login_input.dto"
+import LogoutInputDto from "../src/application/dto/logout_input.dto"
 import OnboardSellerInputDto from "../src/application/dto/onboard_seller_input.dto"
 import RegisterCourierInputDto from "../src/application/dto/register_courier_input.dto"
 import RegisterUserInputDto from "../src/application/dto/register_user_input.dto"
@@ -86,11 +87,31 @@ describe("what the input DTOs accept", () => {
       expect(await refusedFields(UpdateProfileInputDto, { phoneNumber })).toEqual([])
     })
 
+    it.each(["fullName", "phoneNumber", "streetAddress", "city", "postalCode"])(
+      "refuses null for %s, a value that cannot be cleared",
+      async (field) => {
+        expect(await refusedFields(UpdateProfileInputDto, { [field]: null })).toEqual([field])
+      }
+    )
+
+    it("lets null clear the avatar", async () => {
+      expect(await refusedFields(UpdateProfileInputDto, { avatarUrl: null })).toEqual([])
+    })
+
+    it("still takes a profile update that leaves fields out", async () => {
+      expect(await refusedFields(UpdateProfileInputDto, { city: "Jakarta" })).toEqual([])
+    })
+
     it("refuses an address too long to be one", async () => {
       const refused = await refusedFields(UpdateProfileInputDto, { streetAddress: "x".repeat(256) })
 
       expect(refused).toEqual(["streetAddress"])
     })
+  })
+
+  it("refuses a logout that sends a null refresh token", async () => {
+    expect(await refusedFields(LogoutInputDto, { refreshToken: null })).toEqual(["refreshToken"])
+    expect(await refusedFields(LogoutInputDto, {})).toEqual([])
   })
 
   it("bounds every field of a seller application", async () => {

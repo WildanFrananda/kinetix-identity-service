@@ -3,13 +3,18 @@ import SellerOnboardingUsecaseService from "../../application/services/seller_on
 import ListSellerApplicationsQueryDto from "../../application/dto/list_seller_applications_query.dto"
 import OnboardSellerInputDto from "../../application/dto/onboard_seller_input.dto"
 import MerchantVerificationEntity from "../../domain/entities/merchant_verification.entity"
-import MerchantEntity from "../../domain/entities/merchant.entity"
-import type { ApplicationPage, SellerApplicationView } from "../../types/application.type"
+import type {
+  ApplicationPage,
+  ApprovedMerchant,
+  SellerApplication,
+  SellerApplicationView
+} from "../../types/application.type"
 import RolesGuard from "../guards/roles.guard"
 import SelfOrStaffGuard, { SelfParam } from "../guards/self_or_staff.guard"
 import { Roles } from "../decorators/auth.decorators"
 import { applicationQueryOf } from "../mappers/application_query.mapper"
 import { AccountIdParam } from "../decorators/account_id_param.decorator"
+import { AdminAudit } from "../decorators/admin_audit.decorator"
 
 @Controller("api/v1/sellers")
 class SellerOnboardingController {
@@ -18,6 +23,7 @@ class SellerOnboardingController {
   @Get("applications")
   @UseGuards(RolesGuard)
   @Roles("admin")
+  @AdminAudit("identity.seller_applications_list")
   async listApplications(
     @Query() filter: ListSellerApplicationsQueryDto
   ): Promise<ApplicationPage<SellerApplicationView>> {
@@ -27,7 +33,8 @@ class SellerOnboardingController {
   @Get(":id/application")
   @UseGuards(SelfOrStaffGuard)
   @SelfParam("id")
-  async application(@AccountIdParam("id") userId: number): Promise<MerchantVerificationEntity> {
+  @AdminAudit("identity.seller_application_read", "id")
+  async application(@AccountIdParam("id") userId: number): Promise<SellerApplication> {
     return await this.sellerOnboardingUsecase.applicationOf(userId)
   }
 
@@ -35,6 +42,7 @@ class SellerOnboardingController {
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(SelfOrStaffGuard)
   @SelfParam("id")
+  @AdminAudit("identity.seller_onboard", "id")
   async onboardSeller(
     @AccountIdParam("id") userId: number,
     @Body() dto: OnboardSellerInputDto
@@ -46,7 +54,8 @@ class SellerOnboardingController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(RolesGuard)
   @Roles("admin")
-  async approveVerification(@AccountIdParam("id") userId: number): Promise<MerchantEntity> {
+  @AdminAudit("identity.seller_verify", "id")
+  async approveVerification(@AccountIdParam("id") userId: number): Promise<ApprovedMerchant> {
     return await this.sellerOnboardingUsecase.approveVerification(userId)
   }
 
@@ -54,7 +63,8 @@ class SellerOnboardingController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(RolesGuard)
   @Roles("admin")
-  async rejectVerification(@AccountIdParam("id") userId: number): Promise<MerchantVerificationEntity> {
+  @AdminAudit("identity.seller_reject", "id")
+  async rejectVerification(@AccountIdParam("id") userId: number): Promise<SellerApplication> {
     return await this.sellerOnboardingUsecase.rejectVerification(userId)
   }
 }

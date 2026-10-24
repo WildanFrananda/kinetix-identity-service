@@ -1,10 +1,24 @@
-import { ForbiddenException, UnauthorizedException, UnprocessableEntityException } from "@nestjs/common"
+import {
+  BadRequestException,
+  ForbiddenException,
+  UnauthorizedException,
+  UnprocessableEntityException
+} from "@nestjs/common"
+import * as bcrypt from "bcrypt"
 import UserEntity from "../src/domain/entities/user.entity"
 import AuthUsecaseService from "../src/application/services/auth_usecase.service"
 import { codeAt } from "../src/infrastructure/crypto/totp"
-import type { AccessClaims } from "../src/types/token.type"
+import type { CallContext } from "../src/types/call_context.type"
+import type { AccessClaims, SessionClaims } from "../src/types/token.type"
+import type { TwoFactorSetup } from "../src/types/two_factor.type"
 
 const PRINCIPAL = "11111111-2222-3333-4444-555555555555"
+
+const CONTEXT: CallContext = { requestId: "req-auth", client: { kind: "unnamed" } }
+
+const PASSWORD = "account-fixture-password"
+
+const PASSWORD_HASH = bcrypt.hashSync(PASSWORD, 4)
 
 const CALLER: AccessClaims = {
   sub: PRINCIPAL,
@@ -25,10 +39,12 @@ describe("AuthUsecaseService Unit Tests", () => {
   let mockUserRepository: any
   let mockTokenService: any
   let mockPrincipalResolver: any
+  let mockSignInAttempts: any
+  let mockClientGate: any
   let user: UserEntity
 
   beforeEach(() => {
-    user = new UserEntity(1, "user@kinetix.com", "hash", "customer")
+    user = new UserEntity(1, "user@kinetix.com", PASSWORD_HASH, "customer")
     mockUserRepository = {
       findByEmail: jest.fn(),
       findById: jest.fn(),
@@ -54,7 +70,29 @@ describe("AuthUsecaseService Unit Tests", () => {
       syncKind: jest.fn().mockResolvedValue(undefined)
     }
 
-    service = new AuthUsecaseService(mockUserRepository, mockTokenService, mockPrincipalResolver)
+    mockSignInAttempts = {
+      admit: jest.fn().mockResolvedValue({ attempts: 1 }),
+      admitChallengeAttempt: jest.fn().mockResolvedValue(true),
+      failed: jest.fn(),
+      succeeded: jest.fn().mockResolvedValue(undefined)
+    }
+
+    mockClientGate = {
+      mismatch: jest.fn().mockReturnValue(new UnauthorizedException({ error: "CLIENT_MISMATCH" })),
+      bound: jest.fn()
+    }
+
+    service = new AuthUsecaseService(
+      mockUserRepository,
+      mockTokenService,
+      mockPrincipalResolver,
+      mockSignInAttempts,
+      mockClientGate
+    )
+  })
+
+  afterEach(() => {
+    jest.restoreAllMocks()
   })
 
   it("should register a new user successfully", async () => {
@@ -63,10 +101,13 @@ describe("AuthUsecaseService Unit Tests", () => {
       return new UserEntity(1, user.email, user.passwordHash, user.role)
     })
 
-    const result = await service.register({
-      email: "newuser@kinetix.com",
-      password: "password12345"
-    })
+    const result = await service.register(
+      {
+        email: "newuser@kinetix.com",
+        password: "password12345"
+      },
+      CONTEXT
+    )
 
     expect(result.accessToken).toBe("mocked_access_token")
     expect(result.refreshToken).toBe("mocked_refresh_token")
@@ -81,18 +122,22 @@ describe("AuthUsecaseService Unit Tests", () => {
       return new UserEntity(1, user.email, user.passwordHash, user.role)
     })
 
-    const result = await service.register({
-      email: "attacker@kinetix.com",
-      password: "password123",
-      role: "admin"
-    } as any)
+    const result = await service.register(
+      {
+        email: "attacker@kinetix.com",
+        password: "password123",
+        role: "admin"
+      } as any,
+      CONTEXT
+    )
 
     const persisted: UserEntity = mockUserRepository.save.mock.calls[0][0]
     expect(persisted.role).toBe("customer")
     expect(result.user.role).toBe("customer")
     expect(mockTokenService.issuePair).toHaveBeenCalledWith(
       expect.objectContaining({ role: "customer" }),
-      "11111111-2222-3333-4444-555555555555"
+      "11111111-2222-3333-4444-555555555555",
+      null
     )
   })
 
@@ -102,7 +147,7 @@ describe("AuthUsecaseService Unit Tests", () => {
       return new UserEntity(7, user.email, user.passwordHash, user.role)
     })
 
-    const result = await service.register({ email: "seven@kinetix.com", password: "password123" })
+    const result = await service.register({ email: "seven@kinetix.com", password: "password123" }, CONTEXT)
 
     expect(result.user.principalId).toBe("11111111-2222-3333-4444-555555555555")
     expect(mockTokenService.issuePair.mock.calls[0][1]).toBe("11111111-2222-3333-4444-555555555555")
@@ -114,7 +159,7 @@ describe("AuthUsecaseService Unit Tests", () => {
     mockUserRepository.findByEmail.mockResolvedValue(user)
     jest.spyOn(require("bcrypt"), "compare").mockResolvedValue(true as never)
 
-    await service.login({ email: "seller@kinetix.com", password: "password123" })
+    await service.login({ email: "seller@kinetix.com", password: "password123" }, CONTEXT)
 
     expect(mockPrincipalResolver.syncKind).toHaveBeenCalledWith("11111111-2222-3333-4444-555555555555", "seller")
   })
@@ -122,7 +167,7 @@ describe("AuthUsecaseService Unit Tests", () => {
   it("should reject an unknown email without revealing that it is unknown", async () => {
     mockUserRepository.findByEmail.mockResolvedValue(null)
 
-    await expect(service.login({ email: "nobody@kinetix.com", password: "whatever" })).rejects.toThrow(
+    await expect(service.login({ email: "nobody@kinetix.com", password: "whatever" }, CONTEXT)).rejects.toThrow(
       "Invalid email or password credentials"
     )
   })
@@ -132,7 +177,7 @@ describe("AuthUsecaseService Unit Tests", () => {
       mockUserRepository.findByEmail.mockResolvedValue(null)
       mockUserRepository.save.mockImplementation(async (u: UserEntity) => u)
 
-      const result = await service.register({ email: "  New.User@Kinetix.COM ", password: "password12345" })
+      const result = await service.register({ email: "  New.User@Kinetix.COM ", password: "password12345" }, CONTEXT)
 
       expect(mockUserRepository.findByEmail).toHaveBeenCalledWith("new.user@kinetix.com")
       expect(mockUserRepository.save.mock.calls[0][0].email).toBe("new.user@kinetix.com")
@@ -143,7 +188,7 @@ describe("AuthUsecaseService Unit Tests", () => {
       mockUserRepository.findByEmail.mockResolvedValue(user)
       jest.spyOn(require("bcrypt"), "compare").mockResolvedValue(true as never)
 
-      await service.login({ email: "User@Kinetix.Com", password: "password123" })
+      await service.login({ email: "User@Kinetix.Com", password: "password123" }, CONTEXT)
 
       expect(mockUserRepository.findByEmail).toHaveBeenCalledWith("user@kinetix.com")
     })
@@ -165,9 +210,7 @@ describe("AuthUsecaseService Unit Tests", () => {
         token_use: "refresh"
       })
 
-      await expect(service.logout(CALLER, "someone-elses-refresh-token")).rejects.toBeInstanceOf(
-        ForbiddenException
-      )
+      await expect(service.logout(CALLER, "someone-elses-refresh-token")).rejects.toBeInstanceOf(ForbiddenException)
       expect(mockTokenService.logout).not.toHaveBeenCalled()
     })
 
@@ -183,14 +226,26 @@ describe("AuthUsecaseService Unit Tests", () => {
       return codeAt(secret, Math.floor(Date.now() / 1000 / 30))
     }
 
+    function setup(): Promise<TwoFactorSetup> {
+      return service.setupTwoFactor(CALLER, 1, { password: PASSWORD }, CONTEXT)
+    }
+
+    function enable(code: string, claims: SessionClaims = CALLER): Promise<{ enabled: true }> {
+      return service.enableTwoFactor(claims, 1, { code, password: PASSWORD }, CONTEXT)
+    }
+
+    function disable(code: string): Promise<{ enabled: false }> {
+      return service.disableTwoFactor(CALLER, 1, { code, password: PASSWORD }, CONTEXT)
+    }
+
     async function setUpSecret(): Promise<string> {
-      const res = await service.setupTwoFactor(1)
+      const res = await setup()
       return res.twoFactorSecret
     }
 
     async function enabledSecret(): Promise<string> {
       const secret = await setUpSecret()
-      await service.enableTwoFactor(CALLER, 1, currentCode(secret))
+      await enable(currentCode(secret))
       jest.clearAllMocks()
       mockUserRepository.acceptTwoFactorStep.mockResolvedValue(true)
       return secret
@@ -209,7 +264,7 @@ describe("AuthUsecaseService Unit Tests", () => {
     })
 
     it("returns a scannable secret and leaves it disabled", async () => {
-      const res = await service.setupTwoFactor(1)
+      const res = await setup()
 
       expect(res.twoFactorSecret).toMatch(/^[A-Z2-7]+$/)
       expect(res.qrCodeUrl).toContain("otpauth://totp/")
@@ -219,28 +274,26 @@ describe("AuthUsecaseService Unit Tests", () => {
 
     it("refuses to re-issue a secret for an account that already has it on", async () => {
       user.isTwoFactorEnabled = true
-      await expect(service.setupTwoFactor(1)).rejects.toThrow("already enabled")
+      await expect(setup()).rejects.toThrow("already enabled")
     })
 
     it("refuses to enable on a wrong code with 422, so a signed-in client does not sign out", async () => {
       await setUpSecret()
 
-      await expect(service.enableTwoFactor(CALLER, 1, "000000")).rejects.toBeInstanceOf(
-        UnprocessableEntityException
-      )
+      await expect(enable("000000")).rejects.toBeInstanceOf(UnprocessableEntityException)
       expect(user.isTwoFactorEnabled).toBe(false)
     })
 
     it("enables on a correct code", async () => {
       const secret = await setUpSecret()
-      await expect(service.enableTwoFactor(CALLER, 1, currentCode(secret))).resolves.toEqual({ enabled: true })
+      await expect(enable(currentCode(secret))).resolves.toEqual({ enabled: true })
       expect(user.isTwoFactorEnabled).toBe(true)
     })
 
     it("ends every other session of the account when it is enabled", async () => {
       const secret = await setUpSecret()
 
-      await service.enableTwoFactor(CALLER, 1, currentCode(secret))
+      await enable(currentCode(secret))
 
       expect(mockTokenService.revokeOtherSessions).toHaveBeenCalledWith(
         PRINCIPAL,
@@ -253,28 +306,24 @@ describe("AuthUsecaseService Unit Tests", () => {
       const secret = await setUpSecret()
       mockTokenService.revokeOtherSessions.mockRejectedValue(new Error("connection terminated"))
 
-      await expect(service.enableTwoFactor(CALLER, 1, currentCode(secret))).rejects.toThrow(
-        "connection terminated"
-      )
+      await expect(enable(currentCode(secret))).rejects.toThrow("connection terminated")
       expect(user.isTwoFactorEnabled).toBe(false)
     })
 
     it("refuses to enable before a secret has been issued", async () => {
       user.twoFactorSecret = null
-      await expect(service.enableTwoFactor(CALLER, 1, "123456")).rejects.toThrow("Request a two-factor secret")
+      await expect(enable("123456")).rejects.toThrow("Request a two-factor secret")
     })
 
     it("refuses to act on another account's second factor", async () => {
-      await expect(service.enableTwoFactor({ ...CALLER, uid: 2 }, 1, "123456")).rejects.toBeInstanceOf(
-        ForbiddenException
-      )
+      await expect(enable("123456", { ...CALLER, uid: 2 })).rejects.toBeInstanceOf(ForbiddenException)
     })
 
     it("refuses a code whose time step was already accepted", async () => {
       const secret = await setUpSecret()
       mockUserRepository.acceptTwoFactorStep.mockResolvedValue(false)
 
-      await expect(service.enableTwoFactor(CALLER, 1, currentCode(secret))).rejects.toThrow("already been used")
+      await expect(enable(currentCode(secret))).rejects.toThrow("already been used")
       expect(user.isTwoFactorEnabled).toBe(false)
     })
 
@@ -283,7 +332,7 @@ describe("AuthUsecaseService Unit Tests", () => {
       mockUserRepository.findByEmail.mockResolvedValue(user)
       jest.spyOn(require("bcrypt"), "compare").mockResolvedValue(true as never)
 
-      const res: any = await service.login({ email: user.email, password: "password123" })
+      const res: any = await service.login({ email: user.email, password: "password123" }, CONTEXT)
 
       expect(res.mfaRequired).toBe(true)
       expect(res.challengeToken).toBeDefined()
@@ -294,20 +343,20 @@ describe("AuthUsecaseService Unit Tests", () => {
     it("issues tokens only when the challenge is answered with a valid code", async () => {
       const secret = await enabledSecret()
 
-      await expect(service.verifyTwoFactor("challenge", "000000")).rejects.toThrow("not valid")
+      await expect(service.verifyTwoFactor("challenge", "000000", CONTEXT)).rejects.toThrow("not valid")
       expect(mockTokenService.issuePair).not.toHaveBeenCalled()
 
-      const out = await service.verifyTwoFactor("challenge", currentCode(secret))
+      const out = await service.verifyTwoFactor("challenge", currentCode(secret), CONTEXT)
       expect(out.accessToken).toBe("mocked_access_token")
     })
 
     it("spends the challenge when it is answered, and only then", async () => {
       const secret = await enabledSecret()
 
-      await expect(service.verifyTwoFactor("challenge", "000000")).rejects.toThrow("not valid")
+      await expect(service.verifyTwoFactor("challenge", "000000", CONTEXT)).rejects.toThrow("not valid")
       expect(mockTokenService.consumeMfaChallenge).not.toHaveBeenCalled()
 
-      await service.verifyTwoFactor("challenge", currentCode(secret))
+      await service.verifyTwoFactor("challenge", currentCode(secret), CONTEXT)
       expect(mockTokenService.consumeMfaChallenge).toHaveBeenCalledWith(
         expect.objectContaining({ jti: "challenge-jti" })
       )
@@ -319,7 +368,9 @@ describe("AuthUsecaseService Unit Tests", () => {
         new UnauthorizedException("This challenge has already been answered; sign in again")
       )
 
-      await expect(service.verifyTwoFactor("challenge", currentCode(secret))).rejects.toThrow("already been answered")
+      await expect(service.verifyTwoFactor("challenge", currentCode(secret), CONTEXT)).rejects.toThrow(
+        "already been answered"
+      )
       expect(mockTokenService.issuePair).not.toHaveBeenCalled()
     })
 
@@ -327,7 +378,7 @@ describe("AuthUsecaseService Unit Tests", () => {
       const secret = await enabledSecret()
       mockUserRepository.acceptTwoFactorStep.mockResolvedValue(false)
 
-      await expect(service.verifyTwoFactor("challenge", currentCode(secret))).rejects.toBeInstanceOf(
+      await expect(service.verifyTwoFactor("challenge", currentCode(secret), CONTEXT)).rejects.toBeInstanceOf(
         UnauthorizedException
       )
       expect(mockTokenService.issuePair).not.toHaveBeenCalled()
@@ -337,18 +388,16 @@ describe("AuthUsecaseService Unit Tests", () => {
       user.isTwoFactorEnabled = false
       user.twoFactorSecret = null
 
-      await expect(service.verifyTwoFactor("challenge", "123456")).rejects.toThrow("does not have two-factor")
+      await expect(service.verifyTwoFactor("challenge", "123456", CONTEXT)).rejects.toThrow("does not have two-factor")
     })
 
     it("requires a current code to turn it off, and forgets the secret", async () => {
       const secret = await enabledSecret()
 
-      await expect(service.disableTwoFactor(CALLER, 1, "000000")).rejects.toBeInstanceOf(
-        UnprocessableEntityException
-      )
+      await expect(disable("000000")).rejects.toBeInstanceOf(UnprocessableEntityException)
       expect(user.isTwoFactorEnabled).toBe(true)
 
-      await expect(service.disableTwoFactor(CALLER, 1, currentCode(secret))).resolves.toEqual({ enabled: false })
+      await expect(disable(currentCode(secret))).resolves.toEqual({ enabled: false })
       expect(user.isTwoFactorEnabled).toBe(false)
       expect(user.twoFactorSecret).toBeNull()
       expect(mockUserRepository.save.mock.calls.at(-1)[0].twoFactorSecret).toBeNull()
@@ -357,7 +406,7 @@ describe("AuthUsecaseService Unit Tests", () => {
     it("ends every other session of the account when it is disabled", async () => {
       const secret = await enabledSecret()
 
-      await service.disableTwoFactor(CALLER, 1, currentCode(secret))
+      await disable(currentCode(secret))
 
       expect(mockTokenService.revokeOtherSessions).toHaveBeenCalledWith(
         PRINCIPAL,

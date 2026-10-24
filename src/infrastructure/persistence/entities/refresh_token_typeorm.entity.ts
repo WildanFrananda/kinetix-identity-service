@@ -33,6 +33,9 @@ class RefreshTokenTypeormEntity {
   @Column({ type: "int" })
   userId!: number
 
+  @Column({ type: "varchar", length: 64, nullable: true })
+  client?: string | null
+
   @Column({ type: "timestamptz" })
   expiresAt!: Date
 

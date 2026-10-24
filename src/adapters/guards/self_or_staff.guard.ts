@@ -39,7 +39,7 @@ class SelfOrStaffGuard implements CanActivate {
     }
 
     const ownerOnly: boolean = this.reflector.get<boolean>(OWNER_ONLY_KEY, context.getHandler()) ?? false
-    if (claims.role === "admin" && !ownerOnly) {
+    if (claims.token_use === "access" && claims.role === "admin" && !ownerOnly) {
       return true
     }
 

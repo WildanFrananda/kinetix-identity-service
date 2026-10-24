@@ -10,7 +10,11 @@ class FleetRegistryError extends Error {
   }
 
   get definitelyDidNothing(): boolean {
-    return this.failure.kind === "refused"
+    return this.failure.kind !== "unknown"
+  }
+
+  get isFault(): boolean {
+    return this.failure.kind === "fault"
   }
 }
 

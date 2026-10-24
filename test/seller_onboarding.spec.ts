@@ -40,7 +40,8 @@ describe("SellerOnboardingUsecaseService Unit Tests", () => {
     mockPrincipalResolver = {
       resolveOrMintForUser: jest.fn().mockResolvedValue("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
       syncKind: jest.fn().mockResolvedValue(undefined),
-      registerAlias: jest.fn().mockResolvedValue(undefined)
+      registerAlias: jest.fn().mockResolvedValue(undefined),
+      principalIdForUser: jest.fn().mockResolvedValue("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
     }
 
     mockGeocoding = {
@@ -249,6 +250,48 @@ describe("SellerOnboardingUsecaseService Unit Tests", () => {
     expect(rejected.status).toBe("rejected")
     expect(mockUserRepo.save).not.toHaveBeenCalled()
     expect(mockMerchantRepo.save).not.toHaveBeenCalled()
+  })
+
+  describe("the principal id an admin needs", () => {
+    it("names the applicant's principal on the application", async () => {
+      mockVerificationRepo.findByUserId.mockResolvedValue(pending())
+
+      const application = await service.applicationOf(1)
+
+      expect(application.principalId).toBe("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+      expect(mockPrincipalResolver.principalIdForUser).toHaveBeenCalledWith(1)
+      expect(mockPrincipalResolver.resolveOrMintForUser).not.toHaveBeenCalled()
+    })
+
+    it("says null rather than inventing one when the applicant has no principal", async () => {
+      mockVerificationRepo.findByUserId.mockResolvedValue(pending())
+      mockPrincipalResolver.principalIdForUser.mockResolvedValue(null)
+
+      const application = await service.applicationOf(1)
+
+      expect(application.principalId).toBeNull()
+    })
+
+    it("names it on a rejection", async () => {
+      mockVerificationRepo.findByUserId.mockResolvedValue(pending())
+      mockVerificationRepo.save.mockImplementation(async (v: MerchantVerificationEntity) => v)
+
+      const rejected = await service.rejectVerification(1)
+
+      expect(rejected.principalId).toBe("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+    })
+
+    it("names the merchant's principal on an approval", async () => {
+      mockVerificationRepo.findByUserId.mockResolvedValue(pending())
+      mockVerificationRepo.save.mockImplementation(async (v: MerchantVerificationEntity) => v)
+      mockMerchantRepo.findByUserId.mockResolvedValue(null)
+      mockMerchantRepo.save.mockImplementation(async (m: MerchantEntity) => savedAsSeven(m))
+
+      const approved = await service.approveVerification(1)
+
+      expect(approved.principalId).toBe("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+      expect(approved.id).toBe(7)
+    })
   })
 
   it("refuses to reject an application that is already verified", async () => {

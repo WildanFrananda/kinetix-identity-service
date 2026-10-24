@@ -151,7 +151,7 @@ describe("CourierOnboardingUsecaseService Unit Tests", () => {
   it("does not tell an admin to approve again when the fleet definitely refused", async () => {
     mockFleet.activateDriver.mockRejectedValue(
       new FleetRegistryError({
-        kind: "refused",
+        kind: "fault",
         code: "FLEET_PERMISSION_DENIED",
         message: "identity is not on matching's allow list"
       })

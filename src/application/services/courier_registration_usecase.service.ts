@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   BadRequestException,
   ConflictException,
   Inject,
@@ -18,6 +19,7 @@ import RegisterCourierInputDto from "../dto/register_courier_input.dto"
 import RegisterCourierOutputDto from "../dto/register_courier_output.dto"
 import AuthUsecaseService from "./auth_usecase.service"
 import UserProfileUsecaseService from "./user_profile_usecase.service"
+import type { CallContext } from "../../types/call_context.type"
 
 const ROLES_THAT_MAY_DRIVE: ReadonlyArray<UserEntity["role"]> = ["customer", "courier"]
 
@@ -36,8 +38,8 @@ class CourierRegistrationUsecaseService {
     private readonly applications: CourierApplicationRepositoryPort
   ) {}
 
-  async register(dto: RegisterCourierInputDto): Promise<RegisterCourierOutputDto> {
-    const session: AuthTokenOutputDto = await this.sessionFor(dto)
+  async register(dto: RegisterCourierInputDto, context: CallContext): Promise<RegisterCourierOutputDto> {
+    const session: AuthTokenOutputDto = await this.sessionFor(dto, context)
 
     await this.profileUsecase.updateProfile(session.user.id, {
       fullName: dto.fullName,
@@ -61,21 +63,21 @@ class CourierRegistrationUsecaseService {
     )
   }
 
-  private async sessionFor(dto: RegisterCourierInputDto): Promise<AuthTokenOutputDto> {
+  private async sessionFor(dto: RegisterCourierInputDto, context: CallContext): Promise<AuthTokenOutputDto> {
     const existing: UserEntity | null = await this.userRepository.findByEmail(normalisedEmail(dto.email))
 
     if (!existing) {
-      return await this.authUsecase.register({ email: dto.email, password: dto.password })
+      return await this.authUsecase.register({ email: dto.email, password: dto.password }, context)
     }
 
-    return await this.resume(dto)
+    return await this.resume(dto, context)
   }
 
-  private async resume(dto: RegisterCourierInputDto): Promise<AuthTokenOutputDto> {
+  private async resume(dto: RegisterCourierInputDto, context: CallContext): Promise<AuthTokenOutputDto> {
     let account: UserEntity
 
     try {
-      account = await this.authUsecase.verifyPassword({ email: dto.email, password: dto.password })
+      account = await this.authUsecase.verifyPassword({ email: dto.email, password: dto.password }, context)
     } catch (error) {
       if (error instanceof UnauthorizedException) {
         throw new ConflictException("An account with that email address already exists")
@@ -99,10 +101,11 @@ class CourierRegistrationUsecaseService {
 
     this.logger.log({
       message: "resuming a courier registration for an account that already exists",
-      user_id: account.id
+      requestId: context.requestId,
+      fields: { user_id: account.id }
     })
 
-    return await this.authUsecase.startSession(account)
+    return await this.authUsecase.startSession(account, context)
   }
 
   private async fileVehicle(
@@ -119,7 +122,7 @@ class CourierRegistrationUsecaseService {
       if (registration.alreadyRegistered) {
         this.logger.log({
           message: "the vehicle was already filed for this principal",
-          driver_id: registration.driverId
+          fields: { driver_id: registration.driverId }
         })
       }
 
@@ -132,6 +135,22 @@ class CourierRegistrationUsecaseService {
   private explain(error: unknown): Error {
     if (!(error instanceof FleetRegistryError)) {
       return error instanceof Error ? error : new Error(String(error))
+    }
+
+    if (error.isFault) {
+      this.logger.error({
+        message: "the fleet could not be asked to file a courier's vehicle",
+        fields: { reason: error.message }
+      })
+
+      return new BadGatewayException({
+        error: "FLEET_FAULT",
+        message:
+          "Your account exists, but identity could not file your vehicle because of a fault on its own " +
+          "side. Nothing was filed. Submit the same details again later with the same email and " +
+          "password; the account will be reused.",
+        accountExists: true
+      })
     }
 
     if (error.definitelyDidNothing) {

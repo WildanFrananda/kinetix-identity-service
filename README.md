@@ -29,17 +29,22 @@ Enterprise Identity, Authentication, User Profile, 2FA, OAuth, Merchant Store Ma
 
 Rate limits are per client address: identity trusts exactly one internal hop, the gateway, to name the client.
 
+"Client proof" routes read `X-Kinetix-Client` (the app's name) and, for a client whose proof is `app_check`, a Firebase
+App Check token in `X-Firebase-AppCheck` (`IDENTITY_CLIENTS`, `IDENTITY_UNNAMED_CLIENTS`; see `CLAUDE.md`). Refusals:
+400 `UNKNOWN_CLIENT`, 400 `CLIENT_REQUIRED`, 401 `CLIENT_PROOF_REQUIRED`, 401 `CLIENT_PROOF_INVALID`, 401
+`CLIENT_MISMATCH` (refresh), 503 `CLIENT_PROOF_UNAVAILABLE`.
+
 | Method | Endpoint | Access | Description |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/v1/auth/register` | Public, 5/min | Register a customer account |
-| `POST` | `/api/v1/auth/login` | Public, 5/min | Sign in; answers tokens, or a two-factor challenge |
-| `POST` | `/api/v1/auth/2fa/verify` | Public, 5/min | Answer a two-factor challenge once |
-| `POST` | `/api/v1/auth/refresh` | Public, 10/min | Rotate a refresh token |
+| `POST` | `/api/v1/auth/register` | Public, client proof, 5/min | Register a customer account |
+| `POST` | `/api/v1/auth/login` | Public, client proof, 5/min, per-account delay | Sign in; answers tokens, a two-factor challenge, or (an admin without two-factor) a 10-minute enrolment token |
+| `POST` | `/api/v1/auth/2fa/verify` | Public, client proof, 5/min, per-account delay | Answer a two-factor challenge; five attempts per challenge |
+| `POST` | `/api/v1/auth/refresh` | Public, client proof, 10/min | Rotate a refresh token; only the client that started the session renews it |
 | `POST` | `/api/v1/auth/logout` | Signed in | Revoke the access token and the caller's session (or all its sessions) |
 | `GET` | `/api/v1/auth/me` | Signed in | The caller's claims |
-| `POST` | `/api/v1/auth/2fa/setup/:id` | Owner only | Issue a TOTP secret |
-| `POST` | `/api/v1/auth/2fa/enable/:id` | Owner only, 5/min | Turn two-factor on; ends every other session |
-| `POST` | `/api/v1/auth/2fa/disable/:id` | Owner only, 5/min | Turn two-factor off and forget the secret; ends every other session |
+| `POST` | `/api/v1/auth/2fa/setup/:id` | Owner only, 5/min, per-account delay; takes the enrolment token | Issue a TOTP secret; body `password` with an access token |
+| `POST` | `/api/v1/auth/2fa/enable/:id` | Owner only, 5/min, per-account delay; takes the enrolment token | Turn two-factor on; body `code`, and `password` with an access token; ends every other session (with the enrolment token, every session) |
+| `POST` | `/api/v1/auth/2fa/disable/:id` | Owner only, 5/min, per-account delay | Turn two-factor off and forget the secret; body `code` and `password`; ends every other session (an admin's, every session) |
 | `GET` | `/api/v1/users/:id/profile` | Self or admin | Read a profile |
 | `PUT` | `/api/v1/users/:id/profile` | Self or admin | Write a profile; a changed address is geocoded |
 | `POST` | `/api/v1/sellers/:id/onboard` | Self or admin | File a seller application (`pending`) |
@@ -47,7 +52,7 @@ Rate limits are per client address: identity trusts exactly one internal hop, th
 | `GET` | `/api/v1/sellers/applications` | Admin | List seller applications (`status`, `limit`, `after`) |
 | `POST` | `/api/v1/sellers/:id/verify` | Admin | Approve a pending application |
 | `POST` | `/api/v1/sellers/:id/reject` | Admin | Reject a pending application |
-| `POST` | `/api/v1/couriers/register` | Public, 5/min | Create a courier account and file its vehicle |
+| `POST` | `/api/v1/couriers/register` | Public, client proof, 5/min, per-account delay | Create a courier account and file its vehicle |
 | `GET` | `/api/v1/couriers/applications` | Admin | List courier applications (`status`, `limit`, `after`) |
 | `POST` | `/api/v1/couriers/:principalId/approve` | Admin | Approve a courier and activate it in the fleet |
 | `GET` | `/.well-known/jwks.json` | Public | The keys tokens are verified with |

@@ -9,6 +9,26 @@ type MfaChallengeClaims = {
   uid: number
 }
 
+type EnrolmentClaims = {
+  sub: string
+  jti: string
+  iss: string
+  aud: string
+  exp: number
+  iat: number
+  token_use: "mfa_enrolment"
+  azp?: string
+  uid: number
+}
+
+type TwoFactorEnrolment = {
+  mfaEnrolmentRequired: true
+  enrolmentToken: string
+  tokenType: "Bearer"
+  expiresIn: number
+  userId: number
+}
+
 type TwoFactorChallenge = {
   mfaRequired: true
   challengeToken: string
@@ -25,4 +45,11 @@ type TwoFactorCodeInput = {
   code: string
 }
 
-export type { MfaChallengeClaims, TwoFactorChallenge, TwoFactorCodeInput, TwoFactorSetup }
+export type {
+  EnrolmentClaims,
+  MfaChallengeClaims,
+  TwoFactorChallenge,
+  TwoFactorCodeInput,
+  TwoFactorEnrolment,
+  TwoFactorSetup
+}

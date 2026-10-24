@@ -93,7 +93,7 @@ class FleetRegistryGrpcAdapter implements FleetRegistryPort {
       if (typeof invoke !== "function") {
         reject(
           new FleetRegistryError({
-            kind: "refused",
+            kind: "fault",
             code: "FLEET_METHOD_MISSING",
             message:
               `fleet.v1.FleetRegistryService has no ${method} in the installed kinetix-contracts. ` +
@@ -129,13 +129,15 @@ class FleetRegistryGrpcAdapter implements FleetRegistryPort {
       status.UNIMPLEMENTED
     ]
 
-    const kind = certainlyUntouched.includes(error.code) ? "refused" : "unknown"
+    const kind = certainlyUntouched.includes(error.code) ? "fault" : "unknown"
 
     this.logger.error({
       message: `fleet ${method} failed`,
-      grpc_code: error.code,
-      grpc_details: error.details,
-      compensation: kind === "refused" ? "safe to undo the account" : "must not undo the account"
+      fields: {
+        grpc_code: error.code,
+        grpc_details: error.details,
+        compensation: kind === "fault" ? "safe to undo the account" : "must not undo the account"
+      }
     })
 
     return {
@@ -162,7 +164,7 @@ class FleetRegistryGrpcAdapter implements FleetRegistryPort {
       })
     } catch (cause) {
       throw new FleetRegistryError({
-        kind: "refused",
+        kind: "fault",
         code: "FLEET_CONTRACT_MISSING",
         message:
           "fleet/v1/registry.proto is not in the installed kinetix-contracts. Bump the package to a " +
