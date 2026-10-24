@@ -112,7 +112,7 @@ class CourierOnboardingUsecaseService {
 
     this.logger.warn({
       message: "the fleet refused the activation, so the account was returned to customer",
-      principal_id: principalId
+      fields: { principal_id: principalId }
     })
   }
 
@@ -127,6 +127,20 @@ class CourierOnboardingUsecaseService {
         message:
           "This account has filed no vehicle, so it cannot be approved as a courier. Nothing was " +
           "changed; it must register a vehicle first."
+      })
+    }
+
+    if (error.isFault) {
+      this.logger.error({
+        message: "the fleet could not be asked to activate a driver",
+        fields: { reason: error.message }
+      })
+
+      return new BadGatewayException({
+        error: error.failure.code,
+        message:
+          `identity could not ask the fleet to activate this driver (${error.failure.code}); the fault ` +
+          "lies between identity and the fleet, not with the account. Nothing was changed."
       })
     }
 

@@ -10,8 +10,9 @@ import type { ArgumentsHost, ExceptionFilter } from "@nestjs/common"
 import type { FastifyReply, FastifyRequest } from "fastify"
 import MissingReferenceError from "../../domain/errors/missing_reference.error"
 import RecordConflictError from "../../domain/errors/record_conflict.error"
+import SignInDelayedError from "../../domain/errors/sign_in_delayed.error"
 import { isDatabaseUnavailable } from "../persistence/database_unavailable"
-import type { ErrorResponse } from "../../types/error_response.type"
+import type { DelayedResponse, ErrorResponse } from "../../types/error_response.type"
 import { REQUEST_ID_HEADER } from "./request_id_middleware"
 
 const NO_REQUEST_ID = "-"
@@ -47,6 +48,29 @@ class UnhandledExceptionFilter implements ExceptionFilter {
       }
 
       reply.status(HttpStatus.SERVICE_UNAVAILABLE).send(unavailable)
+      return
+    }
+
+    if (exception instanceof SignInDelayedError) {
+      logger.warn({
+        message: `${request.method} ${request.url} delayed for ${exception.retryAfterSeconds} s`,
+        requestId,
+        fields: { method: request.method, path: request.url, status: HttpStatus.TOO_MANY_REQUESTS }
+      })
+
+      const delayed: DelayedResponse = {
+        error: "SIGN_IN_DELAYED",
+        message:
+          "Too many unsuccessful sign-in attempts for this account. Nothing was checked; try again " +
+          "after the number of seconds in Retry-After.",
+        retryAfterSeconds: exception.retryAfterSeconds,
+        traceId
+      }
+
+      reply
+        .status(HttpStatus.TOO_MANY_REQUESTS)
+        .header("Retry-After", String(exception.retryAfterSeconds))
+        .send(delayed)
       return
     }
 

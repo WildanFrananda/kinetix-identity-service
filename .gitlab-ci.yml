@@ -82,7 +82,7 @@ migrations:
     # a cursor that reads the same merchant for ever — happens between Postgres and the driver, so
     # a test with a fake repository passes either way and proves nothing. The files share one
     # database and each clears the tables it reads, so they run one at a time.
-    - KINETIX_TEST_POSTGRES=1 bunx jest --config jest.config.cjs --runInBand test/merchant_cursor_precision.spec.ts test/merchant_change_transaction.spec.ts test/refresh_rotation_race.spec.ts test/account_writes.spec.ts test/database_outage.spec.ts
+    - KINETIX_TEST_POSTGRES=1 bunx jest --config jest.config.cjs --runInBand test/merchant_cursor_precision.spec.ts test/merchant_change_transaction.spec.ts test/refresh_rotation_race.spec.ts test/account_writes.spec.ts test/database_outage.spec.ts test/sign_in_attempts.spec.ts test/refresh_client_binding.spec.ts
     # The drift gate. `migration:generate` exits non-zero with "No changes in database schema
     # were found" when entities and schema agree — so a SUCCESSFUL generate means someone
     # changed an entity without writing the migration. Any other failure is not "no drift" and

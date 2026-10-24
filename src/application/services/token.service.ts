@@ -9,9 +9,24 @@ import RefreshTokenTypeormEntity from "../../infrastructure/persistence/entities
 import RevokedAccessTokenTypeormEntity from "../../infrastructure/persistence/entities/revoked_access_token_typeorm.entity"
 import { isUniqueViolation } from "../../infrastructure/persistence/sql_state"
 import { positiveIntegerSetting } from "../../infrastructure/config/required_setting"
-import type { AccessClaims, RefreshClaims, RotationOutcome, TokenPair, TokenSubject } from "../../types/token.type"
+import ClientMismatchError from "../../domain/errors/client_mismatch.error"
+import { clientNameOf, sessionClientDecision } from "../../domain/session_client"
+import type { RequestClient } from "../../types/client.type"
+import type {
+  AccessClaims,
+  RefreshClaims,
+  RotatedPair,
+  RotationOutcome,
+  SessionClaims,
+  TokenPair,
+  TokenSubject
+} from "../../types/token.type"
 import type { JwksDocument } from "../../types/jwks.type"
-import type { MfaChallengeClaims } from "../../types/two_factor.type"
+import type { EnrolmentClaims, MfaChallengeClaims } from "../../types/two_factor.type"
+
+const MFA_CHALLENGE_TTL_SECONDS = 300
+
+const MFA_ENROLMENT_TTL_SECONDS = 600
 
 @Injectable()
 class TokenService {
@@ -57,14 +72,15 @@ class TokenService {
     return this.keys.jwks()
   }
 
-  async issuePair(user: TokenSubject, principalId: string): Promise<TokenPair> {
-    return this.mintPair(user, principalId, randomUUID())
+  async issuePair(user: TokenSubject, principalId: string, client: string | null): Promise<TokenPair> {
+    return this.mintPair(user, principalId, randomUUID(), client)
   }
 
   private async mintPair(
     user: TokenSubject,
     principalId: string,
     familyId: string,
+    client: string | null,
     refreshTokens: Repository<RefreshTokenTypeormEntity> = this.refreshRepository
   ): Promise<TokenPair> {
     const now: number = Math.floor(Date.now() / 1000)
@@ -81,6 +97,7 @@ class TokenService {
         exp: now + this.accessTtlSeconds,
         token_use: "access",
         fam: familyId,
+        ...azpOf(client),
         uid: user.id,
         email: user.email,
         role: user.role
@@ -100,6 +117,7 @@ class TokenService {
         exp: now + this.refreshTtlSeconds,
         token_use: "refresh",
         fam: familyId,
+        ...azpOf(client),
         uid: user.id
       },
       this.keys.privateKey,
@@ -112,6 +130,7 @@ class TokenService {
         familyId,
         principalId,
         userId: user.id,
+        client,
         expiresAt: refreshExpiresAt
       })
     )
@@ -126,17 +145,62 @@ class TokenService {
       throw new UnauthorizedException("This is not an access token")
     }
 
-    const revoked = await this.revokedRepository.findOne({ where: { jti: String(claims.jti) } })
-    if (revoked) {
-      throw new UnauthorizedException("This token has been revoked")
-    }
+    await this.refuseRevoked(claims)
 
     return claims as unknown as AccessClaims
   }
 
+  async verifySession(token: string): Promise<SessionClaims> {
+    const claims = this.verifySignature(token)
+
+    if (claims.token_use !== "access" && claims.token_use !== "mfa_enrolment") {
+      throw new UnauthorizedException("This is not an access token")
+    }
+
+    await this.refuseRevoked(claims)
+
+    return claims as unknown as SessionClaims
+  }
+
+  private async refuseRevoked(claims: jwt.JwtPayload): Promise<void> {
+    const revoked = await this.revokedRepository.findOne({ where: { jti: String(claims.jti) } })
+    if (revoked) {
+      throw new UnauthorizedException("This token has been revoked")
+    }
+  }
+
+  issueEnrolment(
+    user: TokenSubject,
+    principalId: string,
+    client: string | null
+  ): { token: string; expiresIn: number } {
+    const now: number = Math.floor(Date.now() / 1000)
+    const token: string = jwt.sign(
+      {
+        sub: principalId,
+        jti: randomUUID(),
+        iss: this.issuer,
+        aud: this.audience,
+        iat: now,
+        exp: now + MFA_ENROLMENT_TTL_SECONDS,
+        token_use: "mfa_enrolment",
+        ...azpOf(client),
+        uid: user.id
+      },
+      this.keys.privateKey,
+      { algorithm: "RS256", keyid: this.keys.kid }
+    )
+
+    return { token, expiresIn: MFA_ENROLMENT_TTL_SECONDS }
+  }
+
+  async endEnrolment(claims: EnrolmentClaims): Promise<void> {
+    await this.recordRevokedJti(claims.jti, new Date(claims.exp * 1000), "two_factor_enrolled")
+  }
+
   issueMfaChallenge(user: TokenSubject, principalId: string): { token: string; expiresIn: number } {
     const now: number = Math.floor(Date.now() / 1000)
-    const ttl = 300
+    const ttl = MFA_CHALLENGE_TTL_SECONDS
     const token: string = jwt.sign(
       {
         sub: principalId,
@@ -182,7 +246,7 @@ class TokenService {
     return claims as unknown as RefreshClaims
   }
 
-  async rotate(refreshToken: string, user: TokenSubject): Promise<TokenPair> {
+  async rotate(refreshToken: string, user: TokenSubject, client: RequestClient): Promise<RotatedPair> {
     const claims = this.verifySignature(refreshToken)
 
     if (claims.token_use !== "refresh") {
@@ -213,21 +277,31 @@ class TokenService {
         return { refused: "This refresh token has expired" }
       }
 
-      const pair = await this.mintPair(user, stored.principalId, stored.familyId, refreshTokens)
+      const decision = sessionClientDecision(stored.client ?? null, client)
+      if (decision === "mismatch") {
+        return { mismatch: stored.client ?? null }
+      }
+
+      const sessionClient = stored.client ?? clientNameOf(client)
+      const pair = await this.mintPair(user, stored.principalId, stored.familyId, sessionClient, refreshTokens)
 
       const replacement = this.decodeWithoutVerifying(pair.refreshToken)
       stored.usedAt = new Date()
       stored.replacedByJti = replacement?.jti ? String(replacement.jti) : null
       await refreshTokens.save(stored)
 
-      return { pair }
+      return { pair, bound: decision === "bind" }
     })
 
     if ("refused" in outcome) {
       throw new UnauthorizedException(outcome.refused)
     }
 
-    return outcome.pair
+    if ("mismatch" in outcome) {
+      throw new ClientMismatchError(outcome.mismatch)
+    }
+
+    return outcome
   }
 
   async logout(accessClaims: AccessClaims, refreshFamilyId?: string): Promise<void> {
@@ -328,6 +402,10 @@ class TokenService {
     const decoded = jwt.decode(token)
     return decoded && typeof decoded !== "string" ? decoded : null
   }
+}
+
+function azpOf(client: string | null): { azp?: string } {
+  return client === null ? {} : { azp: client }
 }
 
 export default TokenService

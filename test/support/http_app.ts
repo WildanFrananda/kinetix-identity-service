@@ -4,12 +4,14 @@ import { Test } from "@nestjs/testing"
 import { ThrottlerModule } from "@nestjs/throttler"
 import type { NestFastifyApplication } from "@nestjs/platform-fastify"
 import type { InjectOptions, LightMyRequestResponse as InjectResponse } from "fastify"
+import ClientGateService from "../../src/application/services/client_gate.service"
 import RolesGuard from "../../src/adapters/guards/roles.guard"
 import SelfOrStaffGuard from "../../src/adapters/guards/self_or_staff.guard"
 import { createFastifyAdapter } from "../../src/infrastructure/http/fastify_adapter"
 import { configureHttpPipeline } from "../../src/infrastructure/http/http_pipeline"
 import { DEFAULT_THROTTLE } from "../../src/infrastructure/http/throttle_policy"
 import type { AccessClaims } from "../../src/types/token.type"
+import { labClientGate } from "./client_gates"
 
 const GATEWAY_ADDRESS = "172.18.0.4"
 
@@ -57,6 +59,7 @@ async function httpApp(
     imports: [ThrottlerModule.forRoot([DEFAULT_THROTTLE])],
     controllers,
     providers: [
+      { provide: ClientGateService, useValue: labClientGate() },
       ...providers,
       RolesGuard,
       SelfOrStaffGuard,

@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common"
 import { InjectRepository } from "@nestjs/typeorm"
-import { Repository } from "typeorm"
+import { In, Repository } from "typeorm"
 import MerchantVerificationEntity from "../../../domain/entities/merchant_verification.entity"
 import MissingReferenceError from "../../../domain/errors/missing_reference.error"
 import RecordConflictError from "../../../domain/errors/record_conflict.error"
@@ -12,6 +12,7 @@ import type {
   SellerApplicationView
 } from "../../../types/application.type"
 import MerchantVerificationTypeormEntity from "../entities/merchant_verification_typeorm.entity"
+import PrincipalAliasTypeormEntity from "../entities/principal_alias_typeorm.entity"
 import { isForeignKeyViolation, isUniqueViolation } from "../sql_state"
 
 @Injectable()
@@ -76,11 +77,13 @@ class TypeormMerchantVerificationRepositoryAdapter implements MerchantVerificati
     const records = await builder.getMany()
     const hasMore = records.length > query.limit
     const page = hasMore ? records.slice(0, query.limit) : records
+    const principals = await this.principalsOf(page.map((record) => record.userId))
 
     return {
       applications: page.map((record) => ({
         applicationId: record.id,
         userId: record.userId,
+        principalId: principals.get(String(record.userId)) ?? null,
         email: this.emailOf(record),
         storeName: record.storeName,
         businessRegistrationNumber: record.businessRegistrationNumber,
@@ -93,6 +96,18 @@ class TypeormMerchantVerificationRepositoryAdapter implements MerchantVerificati
       })),
       nextAfterId: hasMore ? page[page.length - 1].id : null
     }
+  }
+
+  private async principalsOf(userIds: number[]): Promise<Map<string, string>> {
+    if (userIds.length === 0) {
+      return new Map()
+    }
+
+    const aliases = await this.repo.manager.getRepository(PrincipalAliasTypeormEntity).find({
+      where: { service: "identity", localId: In(userIds.map(String)) }
+    })
+
+    return new Map(aliases.map((alias) => [alias.localId, alias.principalId]))
   }
 
   private emailOf(record: MerchantVerificationTypeormEntity): string {

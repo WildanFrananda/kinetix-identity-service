@@ -4,4 +4,8 @@ type ErrorResponse = {
   traceId: string
 }
 
-export type { ErrorResponse }
+type DelayedResponse = ErrorResponse & {
+  retryAfterSeconds: number
+}
+
+export type { DelayedResponse, ErrorResponse }

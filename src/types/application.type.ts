@@ -1,3 +1,6 @@
+import type MerchantEntity from "../domain/entities/merchant.entity"
+import type MerchantVerificationEntity from "../domain/entities/merchant_verification.entity"
+
 type SellerApplicationStatus = "pending" | "verified" | "rejected"
 
 type CourierApplicationStatus = "pending" | "approved"
@@ -5,6 +8,7 @@ type CourierApplicationStatus = "pending" | "approved"
 type SellerApplicationView = {
   applicationId: number
   userId: number
+  principalId: string | null
   email: string
   storeName: string
   businessRegistrationNumber: string
@@ -14,6 +18,14 @@ type SellerApplicationView = {
   postalCode: string
   status: SellerApplicationStatus
   verifiedAt: string | null
+}
+
+type SellerApplication = MerchantVerificationEntity & {
+  principalId: string | null
+}
+
+type ApprovedMerchant = MerchantEntity & {
+  principalId: string
 }
 
 type CourierApplicationView = {
@@ -47,9 +59,11 @@ type ApplicationPage<V> = {
 export type {
   ApplicationPage,
   ApplicationQuery,
+  ApprovedMerchant,
   CourierApplicationStatus,
   CourierApplicationView,
   CourierFiling,
+  SellerApplication,
   SellerApplicationStatus,
   SellerApplicationView
 }

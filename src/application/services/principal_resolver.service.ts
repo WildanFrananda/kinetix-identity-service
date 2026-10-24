@@ -50,6 +50,14 @@ class PrincipalResolverService {
     }
   }
 
+  async principalIdForUser(userId: number): Promise<string | null> {
+    const alias = await this.aliasRepository.findOne({
+      where: { service: "identity", localId: String(userId) }
+    })
+
+    return alias ? alias.principalId : null
+  }
+
   async userIdForPrincipal(principalId: string): Promise<number | null> {
     const alias = await this.aliasRepository.findOne({ where: { service: "identity", principalId } })
     if (!alias) {

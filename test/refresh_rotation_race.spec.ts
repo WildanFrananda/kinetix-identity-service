@@ -6,12 +6,16 @@ import JwtKeyProvider from "../src/infrastructure/crypto/jwt_key_provider"
 import PrincipalTypeormEntity from "../src/infrastructure/persistence/entities/principal_typeorm.entity"
 import RefreshTokenTypeormEntity from "../src/infrastructure/persistence/entities/refresh_token_typeorm.entity"
 import RevokedAccessTokenTypeormEntity from "../src/infrastructure/persistence/entities/revoked_access_token_typeorm.entity"
+import type { RequestClient } from "../src/types/client.type"
+import type { RotatedPair } from "../src/types/token.type"
 
 const connectionString = process.env.KINETIX_TEST_POSTGRES
 
 const describeWithDatabase = connectionString ? describe : describe.skip
 
 const USER = { id: 42, email: "user@kinetix.test", role: "customer" }
+
+const UNNAMED: RequestClient = { kind: "unnamed" }
 
 describeWithDatabase("refresh rotation against a real database", () => {
   let dataSource: DataSource
@@ -56,7 +60,7 @@ describeWithDatabase("refresh rotation against a real database", () => {
     const principal = await dataSource.getRepository(PrincipalTypeormEntity).save(
       dataSource.getRepository(PrincipalTypeormEntity).create({ kind: "PRINCIPAL_KIND_CUSTOMER" })
     )
-    const pair = await tokens.issuePair(USER, principal.id)
+    const pair = await tokens.issuePair(USER, principal.id, null)
     const familyId = String((jwt.decode(pair.refreshToken) as jwt.JwtPayload).fam)
 
     return { familyId, refreshToken: pair.refreshToken }
@@ -71,8 +75,8 @@ describeWithDatabase("refresh rotation against a real database", () => {
       const session = await aSession()
 
       const results = await Promise.allSettled([
-        tokens.rotate(session.refreshToken, USER),
-        tokens.rotate(session.refreshToken, USER)
+        tokens.rotate(session.refreshToken, USER, UNNAMED),
+        tokens.rotate(session.refreshToken, USER, UNNAMED)
       ])
 
       const accepted = results.filter((result) => result.status === "fulfilled")
@@ -89,21 +93,19 @@ describeWithDatabase("refresh rotation against a real database", () => {
     const session = await aSession()
 
     const results = await Promise.allSettled([
-      tokens.rotate(session.refreshToken, USER),
-      tokens.rotate(session.refreshToken, USER)
+      tokens.rotate(session.refreshToken, USER, UNNAMED),
+      tokens.rotate(session.refreshToken, USER, UNNAMED)
     ])
-    const winner = results.find((result) => result.status === "fulfilled") as PromiseFulfilledResult<{
-      refreshToken: string
-    }>
+    const winner = results.find((result) => result.status === "fulfilled") as PromiseFulfilledResult<RotatedPair>
 
-    await expect(tokens.rotate(winner.value.refreshToken, USER)).rejects.toThrow("revoked")
+    await expect(tokens.rotate(winner.value.pair.refreshToken, USER, UNNAMED)).rejects.toThrow("revoked")
   })
 
   it("still rotates an ordinary session without revoking anything", async () => {
     const session = await aSession()
 
-    const second = await tokens.rotate(session.refreshToken, USER)
-    await tokens.rotate(second.refreshToken, USER)
+    const second = await tokens.rotate(session.refreshToken, USER, UNNAMED)
+    await tokens.rotate(second.pair.refreshToken, USER, UNNAMED)
 
     expect(await liveTokensIn(session.familyId)).toBe(3)
   })

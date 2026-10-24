@@ -15,7 +15,7 @@ type FleetActivation = {
 }
 
 type FleetFailure = {
-  kind: "refused" | "unknown"
+  kind: "refused" | "fault" | "unknown"
   code: string
   message: string
 }

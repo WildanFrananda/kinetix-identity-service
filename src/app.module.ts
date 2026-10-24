@@ -10,18 +10,23 @@ import MerchantVerificationTypeormEntity from "./infrastructure/persistence/enti
 import GeocodedAddressTypeormEntity from "./infrastructure/persistence/entities/geocoded_address_typeorm.entity"
 import MerchantTypeormEntity from "./infrastructure/persistence/entities/merchant_typeorm.entity"
 import CourierApplicationTypeormEntity from "./infrastructure/persistence/entities/courier_application_typeorm.entity"
+import AccountSignInAttemptTypeormEntity from "./infrastructure/persistence/entities/account_sign_in_attempt_typeorm.entity"
+import TwoFactorChallengeAttemptTypeormEntity from "./infrastructure/persistence/entities/two_factor_challenge_attempt_typeorm.entity"
 
 import TypeormUserRepositoryAdapter from "./infrastructure/persistence/adapters/typeorm_user_repository.adapter"
 import TypeormProfileRepositoryAdapter from "./infrastructure/persistence/adapters/typeorm_profile_repository.adapter"
 import TypeormMerchantVerificationRepositoryAdapter from "./infrastructure/persistence/adapters/typeorm_merchant_verification_repository.adapter"
 import TypeormMerchantRepositoryAdapter from "./infrastructure/persistence/adapters/typeorm_merchant_repository.adapter"
 import TypeormCourierApplicationRepositoryAdapter from "./infrastructure/persistence/adapters/typeorm_courier_application_repository.adapter"
+import TypeormSignInAttemptRepositoryAdapter from "./infrastructure/persistence/adapters/typeorm_sign_in_attempt_repository.adapter"
 
 import AuthUsecaseService from "./application/services/auth_usecase.service"
 import UserProfileUsecaseService from "./application/services/user_profile_usecase.service"
 import SellerOnboardingUsecaseService from "./application/services/seller_onboarding_usecase.service"
 import CourierOnboardingUsecaseService from "./application/services/courier_onboarding_usecase.service"
 import CourierRegistrationUsecaseService from "./application/services/courier_registration_usecase.service"
+import SignInAttemptsService from "./application/services/sign_in_attempts.service"
+import ExpiredRecordSweeperService from "./application/services/expired_record_sweeper.service"
 import FleetRegistryGrpcAdapter from "./infrastructure/mesh/fleet_registry_grpc.adapter"
 
 import AuthController from "./adapters/controllers/auth.controller"
@@ -47,6 +52,7 @@ import JwtAuthGuard from "./adapters/guards/jwt_auth.guard"
 import RolesGuard from "./adapters/guards/roles.guard"
 import SelfOrStaffGuard from "./adapters/guards/self_or_staff.guard"
 import JwksController from "./adapters/controllers/jwks.controller"
+import { CLIENT_GATE_PROVIDER } from "./infrastructure/attestation/client_gate.provider"
 import { positiveIntegerSetting, requiredSetting } from "./infrastructure/config/required_setting"
 import { DEFAULT_THROTTLE } from "./infrastructure/http/throttle_policy"
 
@@ -78,7 +84,9 @@ const DATABASE_CONNECT_TIMEOUT_MS = 5000
             MerchantVerificationTypeormEntity,
             MerchantTypeormEntity,
             GeocodedAddressTypeormEntity,
-            CourierApplicationTypeormEntity
+            CourierApplicationTypeormEntity,
+            AccountSignInAttemptTypeormEntity,
+            TwoFactorChallengeAttemptTypeormEntity
           ],
           synchronize: false
         }
@@ -94,7 +102,9 @@ const DATABASE_CONNECT_TIMEOUT_MS = 5000
       MerchantVerificationTypeormEntity,
       MerchantTypeormEntity,
       GeocodedAddressTypeormEntity,
-      CourierApplicationTypeormEntity
+      CourierApplicationTypeormEntity,
+      AccountSignInAttemptTypeormEntity,
+      TwoFactorChallengeAttemptTypeormEntity
     ])
   ],
   controllers: [
@@ -112,6 +122,7 @@ const DATABASE_CONNECT_TIMEOUT_MS = 5000
     JwtKeyProvider,
     TokenService,
     PrincipalResolverService,
+    CLIENT_GATE_PROVIDER,
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard
@@ -119,6 +130,8 @@ const DATABASE_CONNECT_TIMEOUT_MS = 5000
     RolesGuard,
     SelfOrStaffGuard,
     AuthUsecaseService,
+    SignInAttemptsService,
+    ExpiredRecordSweeperService,
     UserProfileUsecaseService,
     GeocodingUsecaseService,
     SellerOnboardingUsecaseService,
@@ -143,6 +156,10 @@ const DATABASE_CONNECT_TIMEOUT_MS = 5000
     {
       provide: "CourierApplicationRepositoryPort",
       useClass: TypeormCourierApplicationRepositoryAdapter
+    },
+    {
+      provide: "SignInAttemptRepositoryPort",
+      useClass: TypeormSignInAttemptRepositoryAdapter
     },
     {
       provide: "FleetRegistryPort",

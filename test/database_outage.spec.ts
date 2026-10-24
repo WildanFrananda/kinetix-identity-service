@@ -8,6 +8,7 @@ import { DataSource } from "typeorm"
 import AuthController from "../src/adapters/controllers/auth.controller"
 import JwtAuthGuard from "../src/adapters/guards/jwt_auth.guard"
 import AuthUsecaseService from "../src/application/services/auth_usecase.service"
+import ClientGateService from "../src/application/services/client_gate.service"
 import TokenService from "../src/application/services/token.service"
 import JwtKeyProvider from "../src/infrastructure/crypto/jwt_key_provider"
 import { createFastifyAdapter } from "../src/infrastructure/http/fastify_adapter"
@@ -16,6 +17,7 @@ import { DEFAULT_THROTTLE } from "../src/infrastructure/http/throttle_policy"
 import PrincipalTypeormEntity from "../src/infrastructure/persistence/entities/principal_typeorm.entity"
 import RefreshTokenTypeormEntity from "../src/infrastructure/persistence/entities/refresh_token_typeorm.entity"
 import RevokedAccessTokenTypeormEntity from "../src/infrastructure/persistence/entities/revoked_access_token_typeorm.entity"
+import { labClientGate } from "./support/client_gates"
 
 const connectionString = process.env.KINETIX_TEST_POSTGRES
 
@@ -104,7 +106,7 @@ describeWithDatabase("identity's HTTP routes when the database cannot be reached
     const principal = await dataSource.getRepository(PrincipalTypeormEntity).save(
       dataSource.getRepository(PrincipalTypeormEntity).create({ kind: "PRINCIPAL_KIND_CUSTOMER" })
     )
-    accessToken = (await tokens.issuePair({ id: 1, email: "o@kinetix.test", role: "customer" }, principal.id))
+    accessToken = (await tokens.issuePair({ id: 1, email: "o@kinetix.test", role: "customer" }, principal.id, null))
       .accessToken
 
     const moduleRef = await Test.createTestingModule({
@@ -112,6 +114,7 @@ describeWithDatabase("identity's HTTP routes when the database cannot be reached
       controllers: [AuthController],
       providers: [
         { provide: AuthUsecaseService, useValue: {} },
+        { provide: ClientGateService, useValue: labClientGate() },
         { provide: APP_GUARD, useValue: new JwtAuthGuard(tokens, new Reflector()) }
       ]
     }).compile()

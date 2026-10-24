@@ -1,3 +1,5 @@
+import type { EnrolmentClaims } from "./two_factor.type"
+
 type TokenSubject = {
   id: number
   email: string
@@ -13,6 +15,7 @@ type AccessClaims = {
   iat: number
   token_use: "access"
   fam?: string
+  azp?: string
   uid: number
   email: string
   role: string
@@ -27,8 +30,11 @@ type RefreshClaims = {
   iat: number
   token_use: "refresh"
   fam: string
+  azp?: string
   uid: number
 }
+
+type SessionClaims = AccessClaims | EnrolmentClaims
 
 type TokenPair = {
   accessToken: string
@@ -36,6 +42,19 @@ type TokenPair = {
   expiresIn: number
 }
 
-type RotationOutcome = { pair: TokenPair } | { refused: string }
+type RotatedPair = {
+  pair: TokenPair
+  bound: boolean
+}
 
-export type { AccessClaims, RefreshClaims, RotationOutcome, TokenPair, TokenSubject }
+type RotationOutcome = RotatedPair | { refused: string } | { mismatch: string | null }
+
+export type {
+  AccessClaims,
+  RefreshClaims,
+  RotatedPair,
+  RotationOutcome,
+  SessionClaims,
+  TokenPair,
+  TokenSubject
+}

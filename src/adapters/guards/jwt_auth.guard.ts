@@ -1,8 +1,8 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from "@nestjs/common"
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common"
 import { Reflector } from "@nestjs/core"
 import TokenService from "../../application/services/token.service"
 import type { AuthenticatedRequest } from "../../types/request.type"
-import { IS_PUBLIC_KEY } from "../decorators/auth.decorators"
+import { ACCEPTS_ENROLMENT_KEY, IS_PUBLIC_KEY } from "../decorators/auth.decorators"
 
 @Injectable()
 class JwtAuthGuard implements CanActivate {
@@ -32,7 +32,19 @@ class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException("A Bearer token is required")
     }
 
-    request.user = await this.tokenService.verifyAccess(parts[1])
+    const claims = await this.tokenService.verifySession(parts[1])
+
+    const acceptsEnrolment: boolean = this.reflector.get<boolean>(ACCEPTS_ENROLMENT_KEY, context.getHandler()) ?? false
+    if (claims.token_use === "mfa_enrolment" && !acceptsEnrolment) {
+      throw new ForbiddenException({
+        error: "TWO_FACTOR_ENROLMENT_ONLY",
+        message:
+          "This session can only set up two-factor authentication. Enable it, then sign in again to " +
+          "reach anything else."
+      })
+    }
+
+    request.user = claims
     return true
   }
 }

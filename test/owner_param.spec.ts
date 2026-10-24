@@ -17,7 +17,7 @@ function contextFor(handler: () => void, role: string, uid: number, id: string):
     getHandler: () => handler,
     getClass: () => Routes,
     switchToHttp: () => ({
-      getRequest: () => ({ user: { role, uid, sub: "p-" + uid }, params: { id } })
+      getRequest: () => ({ user: { role, uid, sub: "p-" + uid, token_use: "access" }, params: { id } })
     })
   } as unknown as ExecutionContext
 }
@@ -27,6 +27,19 @@ describe("who may act on an account's resources", () => {
 
   it("lets an admin act on someone else's profile", () => {
     expect(guard.canActivate(contextFor(Routes.prototype.profile, "admin", 1, "42"))).toBe(true)
+  })
+
+  it("never treats a two-factor enrolment session as an admin", () => {
+    const enrolment = {
+      getType: () => "http",
+      getHandler: () => Routes.prototype.profile,
+      getClass: () => Routes,
+      switchToHttp: () => ({
+        getRequest: () => ({ user: { uid: 1, sub: "p-1", token_use: "mfa_enrolment" }, params: { id: "42" } })
+      })
+    } as unknown as ExecutionContext
+
+    expect(() => guard.canActivate(enrolment)).toThrow(ForbiddenException)
   })
 
   it("refuses an admin on someone else's second factor", () => {
