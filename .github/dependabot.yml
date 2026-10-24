@@ -30,10 +30,21 @@ updates:
       timezone: Asia/Jakarta
     open-pull-requests-limit: 5
     groups:
+      nestjs:
+        patterns:
+          - "@nestjs/*"
       minor-and-patch:
         update-types:
           - minor
           - patch
+      major:
+        update-types:
+          - major
+    ignore:
+      - dependency-name: typescript
+        versions:
+          - "6.x"
+          - "7.0.x"
     commit-message:
       prefix: "deps"
   - package-ecosystem: github-actions
