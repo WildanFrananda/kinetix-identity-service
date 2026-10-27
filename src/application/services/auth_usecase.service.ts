@@ -85,20 +85,29 @@ class AuthUsecaseService {
 
   async verifyTwoFactor(challengeToken: string, code: string, context: CallContext): Promise<AuthTokenOutputDto> {
     const claims = this.tokenService.peekMfaChallenge(challengeToken)
+    await this.tokenService.refuseSpentMfaChallenge(claims)
+
     const user: UserEntity | null = await this.userRepository.findById(claims.uid)
     if (!user) {
-      throw new UnauthorizedException("The account behind this challenge no longer exists")
+      throw new UnauthorizedException({
+        error: "CHALLENGE_INVALID",
+        message: "The account behind this challenge no longer exists"
+      })
     }
 
     if (!user.isTwoFactorEnabled || !user.twoFactorSecret) {
-      throw new UnauthorizedException("This account does not have two-factor authentication enabled")
+      throw new UnauthorizedException({
+        error: "CHALLENGE_INVALID",
+        message: "This account does not have two-factor authentication enabled"
+      })
     }
 
-    const attempt = await this.signInAttempts.admit(user.email)
-
-    const open: boolean = await this.signInAttempts.admitChallengeAttempt(claims)
-    if (!open) {
-      throw new UnauthorizedException("This challenge allows no more attempts; sign in again")
+    const attempt: AdmittedAttempt | null = await this.signInAttempts.admitChallengeAttempt(user.email, claims)
+    if (attempt === null) {
+      throw new UnauthorizedException({
+        error: "CHALLENGE_EXHAUSTED",
+        message: "This challenge allows no more attempts; sign in again"
+      })
     }
 
     const step: number | null = acceptedStep(user.twoFactorSecret, code)
@@ -107,7 +116,7 @@ class AuthUsecaseService {
         { stage: "two_factor", reason: "wrong_code", email: user.email, user, attempt },
         context
       )
-      throw new UnauthorizedException("That code is not valid")
+      throw new UnauthorizedException({ error: "WRONG_CODE", message: "That code is not valid" })
     }
 
     await this.tokenService.consumeMfaChallenge(claims)
@@ -118,7 +127,10 @@ class AuthUsecaseService {
         { stage: "two_factor", reason: "code_reused", email: user.email, user, attempt },
         context
       )
-      throw new UnauthorizedException("That code has already been used; sign in again with the next one")
+      throw new UnauthorizedException({
+        error: "CHALLENGE_SPENT",
+        message: "That code has already been used; sign in again with the next one"
+      })
     }
 
     return await this.startSession(user, context)

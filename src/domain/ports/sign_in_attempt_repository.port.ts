@@ -1,4 +1,9 @@
-import type { AttemptAdmission, AttemptState } from "../../types/sign_in_attempt.type"
+import type {
+  AttemptAdmission,
+  AttemptState,
+  ChallengeAdmission,
+  ChallengeAttempt
+} from "../../types/sign_in_attempt.type"
 
 interface SignInAttemptRepositoryPort {
   claimAccountAttempt(
@@ -6,7 +11,11 @@ interface SignInAttemptRepositoryPort {
     decide: (state: AttemptState | null, now: Date) => AttemptAdmission
   ): Promise<AttemptAdmission>
   clearAccountAttempts(accountKey: string): Promise<void>
-  claimChallengeAttempt(jti: string, expiresAt: Date, limit: number): Promise<boolean>
+  claimChallengeAttempt(
+    accountKey: string,
+    decide: (state: AttemptState | null, now: Date) => AttemptAdmission,
+    challenge: ChallengeAttempt
+  ): Promise<ChallengeAdmission>
   sweep(forgetAfterSeconds: number): Promise<number>
 }
 

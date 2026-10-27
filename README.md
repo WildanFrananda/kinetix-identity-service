@@ -38,7 +38,7 @@ App Check token in `X-Firebase-AppCheck` (`IDENTITY_CLIENTS`, `IDENTITY_UNNAMED_
 | :--- | :--- | :--- | :--- |
 | `POST` | `/api/v1/auth/register` | Public, client proof, 5/min | Register a customer account |
 | `POST` | `/api/v1/auth/login` | Public, client proof, 5/min, per-account delay | Sign in; answers tokens, a two-factor challenge, or (an admin without two-factor) a 10-minute enrolment token |
-| `POST` | `/api/v1/auth/2fa/verify` | Public, client proof, 5/min, per-account delay | Answer a two-factor challenge; five attempts per challenge |
+| `POST` | `/api/v1/auth/2fa/verify` | Public, client proof, 5/min, per-account delay | Answer a two-factor challenge; five attempts per challenge; refusals are 401 `WRONG_CODE`, `CHALLENGE_EXHAUSTED`, `CHALLENGE_SPENT` or `CHALLENGE_INVALID` |
 | `POST` | `/api/v1/auth/refresh` | Public, client proof, 10/min | Rotate a refresh token; only the client that started the session renews it |
 | `POST` | `/api/v1/auth/logout` | Signed in | Revoke the access token and the caller's session (or all its sessions) |
 | `GET` | `/api/v1/auth/me` | Signed in | The caller's claims |
