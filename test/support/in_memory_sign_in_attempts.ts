@@ -1,5 +1,10 @@
 import SignInAttemptRepositoryPort from "../../src/domain/ports/sign_in_attempt_repository.port"
-import type { AttemptAdmission, AttemptState } from "../../src/types/sign_in_attempt.type"
+import type {
+  AttemptAdmission,
+  AttemptState,
+  ChallengeAdmission,
+  ChallengeAttempt
+} from "../../src/types/sign_in_attempt.type"
 
 class InMemorySignInAttempts implements SignInAttemptRepositoryPort {
   readonly accounts = new Map<string, AttemptState>()
@@ -31,14 +36,23 @@ class InMemorySignInAttempts implements SignInAttemptRepositoryPort {
     this.accounts.delete(accountKey)
   }
 
-  async claimChallengeAttempt(jti: string, _expiresAt: Date, limit: number): Promise<boolean> {
-    const attempts = this.challenges.get(jti) ?? 0
-    if (attempts >= limit) {
-      return false
+  async claimChallengeAttempt(
+    accountKey: string,
+    decide: (state: AttemptState | null, now: Date) => AttemptAdmission,
+    challenge: ChallengeAttempt
+  ): Promise<ChallengeAdmission> {
+    const used = this.challenges.get(challenge.jti) ?? 0
+    if (used >= challenge.limit) {
+      return { outcome: "exhausted" }
     }
 
-    this.challenges.set(jti, attempts + 1)
-    return true
+    const admission = await this.claimAccountAttempt(accountKey, decide)
+    if (!admission.admitted) {
+      return { outcome: "delayed", retryAfterSeconds: admission.retryAfterSeconds }
+    }
+
+    this.challenges.set(challenge.jti, used + 1)
+    return { outcome: "admitted", attempts: admission.attempts }
   }
 
   async sweep(): Promise<number> {

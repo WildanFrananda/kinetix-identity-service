@@ -189,12 +189,26 @@ describe("CourierRegistrationUsecaseService Unit Tests", () => {
       expect(mockFleet.registerDriver).not.toHaveBeenCalled()
     })
 
-    it.each(["seller", "admin"] as const)(
-      "refuses to file a vehicle under a %s's account, even with its password",
-      async (role) => {
+    it.each([
+      ["seller", "That account is a seller"],
+      ["admin", "That account is an admin"]
+    ] as const)(
+      "refuses to file a vehicle under an account whose role is %s, even with its password",
+      async (role, opening) => {
         mockAuth.verifyPassword.mockResolvedValue(new UserEntity(7, "driver@kinetix.test", "hash", role))
 
-        await expect(service.register(input(), CONTEXT)).rejects.toThrow(`That account is a ${role}`)
+        const refusal: unknown = await service.register(input(), CONTEXT).catch(function (error: unknown) {
+          return error
+        })
+
+        expect(refusal).toBeInstanceOf(ConflictException)
+        expect((refusal as ConflictException).getResponse()).toEqual({
+          statusCode: 409,
+          error: "Conflict",
+          message:
+            `${opening}, and filing a vehicle under it would make it a courier. ` +
+            "A courier registers with an account of its own."
+        })
         expect(mockAuth.startSession).not.toHaveBeenCalled()
         expect(mockProfile.updateProfile).not.toHaveBeenCalled()
         expect(mockFleet.registerDriver).not.toHaveBeenCalled()

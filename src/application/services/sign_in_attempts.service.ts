@@ -5,7 +5,7 @@ import { admitAttempt, ATTEMPTS_PER_CHALLENGE, FORGET_AFTER_SECONDS } from "../.
 import { accountKeyOf } from "../../infrastructure/crypto/account_key"
 import { recordSignInFailure } from "../../infrastructure/observability/metrics_registry"
 import type { CallContext } from "../../types/call_context.type"
-import type { AdmittedAttempt, SignInFailure, SignInRole } from "../../types/sign_in_attempt.type"
+import type { AdmittedAttempt, ChallengeAttempt, SignInFailure, SignInRole } from "../../types/sign_in_attempt.type"
 import type { MfaChallengeClaims } from "../../types/two_factor.type"
 
 @Injectable()
@@ -26,12 +26,24 @@ class SignInAttemptsService {
     return { attempts: admission.attempts }
   }
 
-  async admitChallengeAttempt(claims: MfaChallengeClaims): Promise<boolean> {
-    return await this.attempts.claimChallengeAttempt(
-      claims.jti,
-      new Date(claims.exp * 1000),
-      ATTEMPTS_PER_CHALLENGE
-    )
+  async admitChallengeAttempt(email: string, claims: MfaChallengeClaims): Promise<AdmittedAttempt | null> {
+    const challenge: ChallengeAttempt = {
+      jti: claims.jti,
+      expiresAt: new Date(claims.exp * 1000),
+      limit: ATTEMPTS_PER_CHALLENGE
+    }
+
+    const admission = await this.attempts.claimChallengeAttempt(accountKeyOf(email), admitAttempt, challenge)
+
+    if (admission.outcome === "delayed") {
+      throw new SignInDelayedError(admission.retryAfterSeconds)
+    }
+
+    if (admission.outcome === "exhausted") {
+      return null
+    }
+
+    return { attempts: admission.attempts }
   }
 
   failed(failure: SignInFailure, context: CallContext): void {

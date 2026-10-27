@@ -169,8 +169,23 @@ arrives while the delay runs is answered 429 `SIGN_IN_DELAYED` with `Retry-After
 and is not itself counted. An hour without attempts forgets the counter. The codes checked inside a session (`enable`,
 `disable`) go through the same counter, so a stolen access token cannot strip the factor at the per-address rate.
 
+A claim is judged by `clock_timestamp()` read after the account's row is locked, the moment it is decided (2026-10-27).
+It used `now()`, the time its transaction began: a claim that waited behind one decided meanwhile found that one's
+`delayedUntil` (its decision time, below five attempts) in its future, and near-simultaneous sign-ins got 429 before the
+fifth attempt.
+
 A challenge takes five attempts (`two_factor_challenge_attempts`, keyed by its `jti`, claimed with a conditional upsert);
 the sixth is refused even with the right code and from a new address, and a new challenge needs the password again.
+Since 2026-10-27 a request on a challenge that is spent, exhausted or invalid is refused without counting on the account,
+because it cannot be a guess at the code: `verify` checks the challenge's revocation first, and `claimChallengeAttempt`
+locks the account's row, reads the challenge's count before it decides the delay and writes both counts in one
+transaction, so simultaneous requests on an exhausted challenge count nothing, and an exhausted challenge is answered as
+exhausted even while the account is delayed.
+
+Every `2fa/verify` refusal is 401 `{error, message, traceId}` (2026-10-27): `WRONG_CODE` (the challenge stays open),
+`CHALLENGE_EXHAUSTED`, `CHALLENGE_SPENT` (also a code another sign-in already used, since answering spent the challenge)
+or `CHALLENGE_INVALID` (also an account that is gone or no longer has the factor). The messages did not change: the
+courier app tells refusals apart by them. The edge keeps its pending sign-in only on `WRONG_CODE`.
 
 `WINDOW_STEPS = 1` keeps three codes valid at a time, so a guess hits with probability 3 in 10⁶. Before these limits it
 was five guesses a minute per address, and with 1,000 addresses a factor fell in about 67 minutes. At the cap it is one

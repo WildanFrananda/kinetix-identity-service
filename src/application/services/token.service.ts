@@ -226,15 +226,34 @@ class TokenService {
     )
 
     if (!consumed) {
-      throw new UnauthorizedException("This challenge has already been answered; sign in again")
+      throw spentChallenge()
+    }
+  }
+
+  async refuseSpentMfaChallenge(claims: MfaChallengeClaims): Promise<void> {
+    const spent = await this.revokedRepository.findOne({ where: { jti: claims.jti } })
+    if (spent) {
+      throw spentChallenge()
     }
   }
 
   peekMfaChallenge(token: string): MfaChallengeClaims {
-    const claims = this.verifySignature(token)
-    if (claims.token_use !== "mfa_challenge") {
-      throw new UnauthorizedException("This is not a two-factor challenge")
+    let claims: jwt.JwtPayload
+
+    try {
+      claims = this.verifySignature(token)
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw new UnauthorizedException({ error: "CHALLENGE_INVALID", message: error.message })
+      }
+
+      throw error
     }
+
+    if (claims.token_use !== "mfa_challenge") {
+      throw new UnauthorizedException({ error: "CHALLENGE_INVALID", message: "This is not a two-factor challenge" })
+    }
+
     return claims as unknown as MfaChallengeClaims
   }
 
@@ -406,6 +425,13 @@ class TokenService {
 
 function azpOf(client: string | null): { azp?: string } {
   return client === null ? {} : { azp: client }
+}
+
+function spentChallenge(): UnauthorizedException {
+  return new UnauthorizedException({
+    error: "CHALLENGE_SPENT",
+    message: "This challenge has already been answered; sign in again"
+  })
 }
 
 export default TokenService

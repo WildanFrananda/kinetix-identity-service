@@ -18,6 +18,17 @@ type AdmittedAttempt = {
   attempts: number
 }
 
+type ChallengeAttempt = {
+  jti: string
+  expiresAt: Date
+  limit: number
+}
+
+type ChallengeAdmission =
+  | { outcome: "admitted"; attempts: number }
+  | { outcome: "delayed"; retryAfterSeconds: number }
+  | { outcome: "exhausted" }
+
 type SignInStage = "password" | "two_factor"
 
 type SignInRole = "admin" | "other"
@@ -36,6 +47,8 @@ export type {
   AdmittedAttempt,
   AttemptAdmission,
   AttemptState,
+  ChallengeAdmission,
+  ChallengeAttempt,
   LockedAttemptRow,
   SignInFailure,
   SignInFailureReason,

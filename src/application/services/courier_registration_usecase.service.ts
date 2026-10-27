@@ -20,8 +20,16 @@ import RegisterCourierOutputDto from "../dto/register_courier_output.dto"
 import AuthUsecaseService from "./auth_usecase.service"
 import UserProfileUsecaseService from "./user_profile_usecase.service"
 import type { CallContext } from "../../types/call_context.type"
+import type { UserRole } from "../../types/principal.type"
 
-const ROLES_THAT_MAY_DRIVE: ReadonlyArray<UserEntity["role"]> = ["customer", "courier"]
+const ROLES_THAT_MAY_DRIVE: ReadonlyArray<UserRole> = ["customer", "courier"]
+
+const ROLE_WITH_ARTICLE: Readonly<Record<UserRole, string>> = {
+  customer: "a customer",
+  seller: "a seller",
+  courier: "a courier",
+  admin: "an admin"
+}
 
 @Injectable()
 class CourierRegistrationUsecaseService {
@@ -87,7 +95,7 @@ class CourierRegistrationUsecaseService {
 
     if (!ROLES_THAT_MAY_DRIVE.includes(account.role)) {
       throw new ConflictException(
-        `That account is a ${account.role}, and filing a vehicle under it would make it a courier. ` +
+        `That account is ${ROLE_WITH_ARTICLE[account.role]}, and filing a vehicle under it would make it a courier. ` +
           "A courier registers with an account of its own."
       )
     }

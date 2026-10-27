@@ -62,6 +62,7 @@ describe("AuthUsecaseService Unit Tests", () => {
       peekMfaChallenge: jest.fn(),
       issueMfaChallenge: jest.fn().mockReturnValue({ token: "mocked_challenge", expiresIn: 300 }),
       consumeMfaChallenge: jest.fn().mockResolvedValue(undefined),
+      refuseSpentMfaChallenge: jest.fn().mockResolvedValue(undefined),
       revokeOtherSessions: jest.fn().mockResolvedValue(undefined),
       logout: jest.fn().mockResolvedValue(undefined)
     }
@@ -72,7 +73,7 @@ describe("AuthUsecaseService Unit Tests", () => {
 
     mockSignInAttempts = {
       admit: jest.fn().mockResolvedValue({ attempts: 1 }),
-      admitChallengeAttempt: jest.fn().mockResolvedValue(true),
+      admitChallengeAttempt: jest.fn().mockResolvedValue({ attempts: 1 }),
       failed: jest.fn(),
       succeeded: jest.fn().mockResolvedValue(undefined)
     }
