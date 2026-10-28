@@ -173,7 +173,10 @@ describe("courier approval when the fleet fails", () => {
         syncKind: jest.fn().mockResolvedValue(undefined)
       } as any,
       fleet,
-      { recordApproved: jest.fn().mockResolvedValue(undefined) } as any
+      {
+        recordApproved: jest.fn().mockResolvedValue(undefined),
+        findByUser: jest.fn().mockResolvedValue(null)
+      } as any
     )
   }
 

@@ -47,7 +47,8 @@ describe("the admin audit", () => {
     }
     couriers = {
       listApplications: jest.fn().mockResolvedValue({ applications: [], nextAfterId: null }),
-      approveCourier: jest.fn().mockResolvedValue({ principalId: COURIER_PRINCIPAL })
+      approveCourier: jest.fn().mockResolvedValue({ principalId: COURIER_PRINCIPAL }),
+      rejectCourier: jest.fn().mockResolvedValue({ principalId: COURIER_PRINCIPAL, status: "rejected" })
     }
     profiles = {
       getProfile: jest.fn().mockResolvedValue({ userId: 7 }),
@@ -121,6 +122,18 @@ describe("the admin audit", () => {
 
     expect(audited()[0].fields).toEqual(
       expect.objectContaining({ action: "identity.courier_approve", target: COURIER_PRINCIPAL, outcome: "failed" })
+    )
+  })
+
+  it("records who rejected which courier", async () => {
+    await send(app, {
+      method: "POST",
+      url: `/api/v1/couriers/${COURIER_PRINCIPAL}/reject`,
+      headers: { [CALLER_HEADER]: "admin" }
+    })
+
+    expect(audited()[0].fields).toEqual(
+      expect.objectContaining({ action: "identity.courier_reject", target: COURIER_PRINCIPAL, outcome: "done" })
     )
   })
 

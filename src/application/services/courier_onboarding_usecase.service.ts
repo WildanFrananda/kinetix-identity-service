@@ -55,6 +55,14 @@ class CourierOnboardingUsecaseService {
       throw new NotFoundException(`No account is registered under principal ${principalId}`)
     }
 
+    const application: CourierApplicationView | null = await this.applications.findByUser(userId)
+    if (application?.status === "rejected") {
+      throw new ConflictException(
+        `The courier application of principal ${principalId} was rejected; it can be approved only after ` +
+          "the courier registers the vehicle again"
+      )
+    }
+
     if (user.role === "courier") {
       const repeated: FleetActivation = await this.activateInFleet(user, principalId, false)
       return await this.approved(user, principalId, repeated)
@@ -74,6 +82,54 @@ class CourierOnboardingUsecaseService {
     const activation: FleetActivation = await this.activateInFleet(user, principalId, true)
 
     return await this.approved(user, principalId, activation)
+  }
+
+  async rejectCourier(principalId: string): Promise<CourierApplicationView> {
+    const userId: number | null = await this.principalResolver.userIdForPrincipal(principalId)
+    if (userId === null) {
+      throw new NotFoundException(`No account is registered under principal ${principalId}`)
+    }
+
+    const user: UserEntity | null = await this.userRepository.findById(userId)
+    if (!user) {
+      throw new NotFoundException(`No account is registered under principal ${principalId}`)
+    }
+
+    await this.pendingApplicationOf(userId, principalId)
+
+    if (user.role === "courier") {
+      throw new ConflictException(
+        `Account ${principalId} is already a courier: an approval began and did not finish. Approve it ` +
+          "again to finish it; a rejection would leave the courier role in place"
+      )
+    }
+
+    if (!(await this.applications.recordRejected(userId))) {
+      await this.pendingApplicationOf(userId, principalId)
+      throw new Error(`the courier application of principal ${principalId} stayed pending through a rejection`)
+    }
+
+    const rejected: CourierApplicationView | null = await this.applications.findByUser(userId)
+    if (!rejected) {
+      throw new NotFoundException(`No courier application is filed under principal ${principalId}`)
+    }
+
+    return rejected
+  }
+
+  private async pendingApplicationOf(userId: number, principalId: string): Promise<CourierApplicationView> {
+    const application: CourierApplicationView | null = await this.applications.findByUser(userId)
+    if (!application) {
+      throw new NotFoundException(`No courier application is filed under principal ${principalId}`)
+    }
+
+    if (application.status !== "pending") {
+      throw new ConflictException(
+        `The courier application of principal ${principalId} is ${application.status}, not pending`
+      )
+    }
+
+    return application
   }
 
   private async approved(

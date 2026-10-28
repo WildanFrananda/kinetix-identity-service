@@ -25,6 +25,7 @@ describe("identity's HTTP routes", () => {
     auth = { logout: jest.fn().mockResolvedValue(undefined) }
     couriers = {
       approveCourier: jest.fn().mockResolvedValue({ principalId: COURIER_PRINCIPAL }),
+      rejectCourier: jest.fn().mockResolvedValue({ principalId: COURIER_PRINCIPAL, status: "rejected" }),
       listApplications: jest.fn().mockResolvedValue(EMPTY_PAGE)
     }
     sellers = {
@@ -79,6 +80,38 @@ describe("identity's HTTP routes", () => {
     })
   })
 
+  describe("courier rejection", () => {
+    it("refuses a principal id that is not a UUID with 400, before anything reads it", async () => {
+      const response = await send(app, {
+        method: "POST",
+        url: "/api/v1/couriers/not-a-uuid/reject",
+        headers: { [CALLER_HEADER]: "admin" }
+      })
+
+      expect(response.statusCode).toBe(400)
+      expect(couriers.rejectCourier).not.toHaveBeenCalled()
+    })
+
+    it("is an admin's only", async () => {
+      const refused = await send(app, {
+        method: "POST",
+        url: `/api/v1/couriers/${COURIER_PRINCIPAL}/reject`,
+        headers: { [CALLER_HEADER]: "customer8" }
+      })
+      const rejected = await send(app, {
+        method: "POST",
+        url: `/api/v1/couriers/${COURIER_PRINCIPAL}/reject`,
+        headers: { [CALLER_HEADER]: "admin" }
+      })
+
+      expect(refused.statusCode).toBe(403)
+      expect(rejected.statusCode).toBe(200)
+      expect(rejected.json().status).toBe("rejected")
+      expect(couriers.rejectCourier).toHaveBeenCalledTimes(1)
+      expect(couriers.rejectCourier).toHaveBeenCalledWith(COURIER_PRINCIPAL)
+    })
+  })
+
   describe("applicant lists", () => {
     it("lists courier applicants for an admin, filtered and paged as asked", async () => {
       const response = await send(app, {
@@ -89,6 +122,17 @@ describe("identity's HTTP routes", () => {
 
       expect(response.statusCode).toBe(200)
       expect(couriers.listApplications).toHaveBeenCalledWith({ status: "pending", afterId: 40, limit: 20 })
+    })
+
+    it("lists rejected courier applicants when asked", async () => {
+      const response = await send(app, {
+        method: "GET",
+        url: "/api/v1/couriers/applications?status=rejected",
+        headers: { [CALLER_HEADER]: "admin" }
+      })
+
+      expect(response.statusCode).toBe(200)
+      expect(couriers.listApplications).toHaveBeenCalledWith({ status: "rejected", afterId: 0, limit: 50 })
     })
 
     it("lists seller applicants for an admin, every status by default", async () => {

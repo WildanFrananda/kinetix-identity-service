@@ -8,6 +8,7 @@ const ADMIN_ACTIONS: readonly AdminAction[] = [
   "identity.seller_reject",
   "identity.courier_applications_list",
   "identity.courier_approve",
+  "identity.courier_reject",
   "identity.profile_read",
   "identity.profile_update"
 ]

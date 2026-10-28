@@ -27,7 +27,13 @@ class TypeormCourierApplicationRepositoryAdapter implements CourierApplicationRe
        VALUES ($1, $2, $3, 'pending')
        ON CONFLICT ("userId") DO UPDATE
          SET "principalId" = EXCLUDED."principalId",
-             "driverId" = EXCLUDED."driverId"`
+             "driverId" = EXCLUDED."driverId",
+             "filedAt" = CASE WHEN "courier_applications"."status" = 'rejected'
+               THEN now() ELSE "courier_applications"."filedAt" END,
+             "rejectedAt" = CASE WHEN "courier_applications"."status" = 'rejected'
+               THEN NULL ELSE "courier_applications"."rejectedAt" END,
+             "status" = CASE WHEN "courier_applications"."status" = 'rejected'
+               THEN 'pending' ELSE "courier_applications"."status" END`
     )
   }
 
@@ -40,8 +46,30 @@ class TypeormCourierApplicationRepositoryAdapter implements CourierApplicationRe
          SET "principalId" = EXCLUDED."principalId",
              "driverId" = EXCLUDED."driverId",
              "status" = 'approved',
-             "approvedAt" = COALESCE("courier_applications"."approvedAt", EXCLUDED."approvedAt")`
+             "approvedAt" = COALESCE("courier_applications"."approvedAt", EXCLUDED."approvedAt"),
+             "rejectedAt" = NULL`
     )
+  }
+
+  async recordRejected(userId: number): Promise<boolean> {
+    const result = await this.repo
+      .createQueryBuilder()
+      .update(CourierApplicationTypeormEntity)
+      .set({ status: "rejected", rejectedAt: () => "now()" })
+      .where(`"userId" = :userId AND "status" = 'pending'`, { userId })
+      .execute()
+
+    return (result.affected ?? 0) > 0
+  }
+
+  async findByUser(userId: number): Promise<CourierApplicationView | null> {
+    const record = await this.repo
+      .createQueryBuilder("application")
+      .innerJoinAndSelect("application.user", "account")
+      .where("application.userId = :userId", { userId })
+      .getOne()
+
+    return record ? this.toView(record) : null
   }
 
   async list(
@@ -94,7 +122,8 @@ class TypeormCourierApplicationRepositoryAdapter implements CourierApplicationRe
       driverId: record.driverId === null ? null : Number(record.driverId),
       status: record.status,
       filedAt: record.filedAt.toISOString(),
-      approvedAt: record.approvedAt ? record.approvedAt.toISOString() : null
+      approvedAt: record.approvedAt ? record.approvedAt.toISOString() : null,
+      rejectedAt: record.rejectedAt ? record.rejectedAt.toISOString() : null
     }
   }
 }

@@ -16,6 +16,7 @@ import { CourierApplications1789620000000 } from "./migrations/1789620000000-Cou
 import { NoPlaceholderStoreDescription1789630000000 } from "./migrations/1789630000000-NoPlaceholderStoreDescription"
 import { SignInAttempts1789640000000 } from "./migrations/1789640000000-SignInAttempts"
 import { RefreshTokenClient1789650000000 } from "./migrations/1789650000000-RefreshTokenClient"
+import { CourierApplicationRejection1789660000000 } from "./migrations/1789660000000-CourierApplicationRejection"
 
 import AccountSignInAttemptTypeormEntity from "./infrastructure/persistence/entities/account_sign_in_attempt_typeorm.entity"
 import CourierApplicationTypeormEntity from "./infrastructure/persistence/entities/courier_application_typeorm.entity"
@@ -68,7 +69,8 @@ export default new DataSource({
     CourierApplications1789620000000,
     NoPlaceholderStoreDescription1789630000000,
     SignInAttempts1789640000000,
-    RefreshTokenClient1789650000000
+    RefreshTokenClient1789650000000,
+    CourierApplicationRejection1789660000000
   ],
   synchronize: false
 })
