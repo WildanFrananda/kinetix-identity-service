@@ -300,6 +300,16 @@ approved appears once it submits the registration again. Approval refuses an acc
 (`NO_DRIVER_RECORD`, 409) and any other definite refusal from the fleet (502), and returns a promoted account to
 customer, because the fleet did nothing; an unknown outcome keeps the role and asks for a retry.
 
+`reject` (2026-10-28, the backoffice's F3, the mirror of seller reject) acts on a `pending` courier application only,
+sets `rejected` and `rejectedAt` with a conditional `UPDATE`, and never asks the fleet: the driver row stays inactive, as
+it was. It refuses an account that is already a courier (409): that is an approval which began and did not finish (the
+503 above), and a rejection would leave the role in place, so the admin approves again instead. A rejected courier files
+again by registering again (the same email and password resume the account); the filing reopens the application as
+`pending` with a new `filedAt`, while an approved one stays approved. An approval refuses a rejected application (409)
+for the same reason seller approval refuses one that is not pending; an approval and a rejection racing each other end
+approved, because the approval's upsert wins. Neither takes a reason: there is no column for one, for sellers or
+couriers, and adding it is a product decision (infra `docs/BACKOFFICE.md` §7.2).
+
 Seller applications name the applicant's principal (`principalId`, `null` when the account never signed in) in the list,
 the read and the rejection, and an approval returns the merchant with it, so an admin has the id other services key on.
 Courier applications and approvals already carried it. Courier

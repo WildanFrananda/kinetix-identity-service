@@ -10,6 +10,20 @@ import CourierOnboardingUsecaseService from "../src/application/services/courier
 
 const PRINCIPAL = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 
+function anApplication(status: "pending" | "approved" | "rejected"): Record<string, unknown> {
+  return {
+    applicationId: 3,
+    principalId: PRINCIPAL,
+    userId: 7,
+    email: "driver@kinetix.test",
+    driverId: 42,
+    status,
+    filedAt: "2026-10-28T08:00:00.000Z",
+    approvedAt: status === "approved" ? "2026-10-28T09:00:00.000Z" : null,
+    rejectedAt: status === "rejected" ? "2026-10-28T09:00:00.000Z" : null
+  }
+}
+
 describe("CourierOnboardingUsecaseService Unit Tests", () => {
   let service: CourierOnboardingUsecaseService
   let mockUserRepo: any
@@ -38,6 +52,8 @@ describe("CourierOnboardingUsecaseService Unit Tests", () => {
     mockApplications = {
       recordFiled: jest.fn(),
       recordApproved: jest.fn().mockResolvedValue(undefined),
+      recordRejected: jest.fn().mockResolvedValue(true),
+      findByUser: jest.fn().mockResolvedValue(null),
       list: jest.fn()
     }
 
@@ -225,5 +241,81 @@ describe("CourierOnboardingUsecaseService Unit Tests", () => {
     mockUserRepo.findById.mockResolvedValue(null)
 
     await expect(service.approveCourier(PRINCIPAL)).rejects.toBeInstanceOf(NotFoundException)
+  })
+
+  it("refuses to approve a rejected application and changes nothing", async () => {
+    mockApplications.findByUser.mockResolvedValue(anApplication("rejected"))
+
+    await expect(service.approveCourier(PRINCIPAL)).rejects.toBeInstanceOf(ConflictException)
+
+    expect(user.role).toBe("customer")
+    expect(mockUserRepo.save).not.toHaveBeenCalled()
+    expect(mockFleet.activateDriver).not.toHaveBeenCalled()
+    expect(mockApplications.recordApproved).not.toHaveBeenCalled()
+  })
+
+  describe("rejection", () => {
+    beforeEach(() => {
+      mockApplications.findByUser
+        .mockResolvedValueOnce(anApplication("pending"))
+        .mockResolvedValueOnce(anApplication("rejected"))
+    })
+
+    it("rejects a pending application and answers it as it now stands", async () => {
+      const rejected = await service.rejectCourier(PRINCIPAL)
+
+      expect(mockApplications.recordRejected).toHaveBeenCalledWith(7)
+      expect(rejected).toEqual(anApplication("rejected"))
+    })
+
+    it("leaves the account a customer and never asks the fleet", async () => {
+      await service.rejectCourier(PRINCIPAL)
+
+      expect(user.role).toBe("customer")
+      expect(mockUserRepo.save).not.toHaveBeenCalled()
+      expect(mockFleet.activateDriver).not.toHaveBeenCalled()
+    })
+
+    it("refuses an account whose approval began, since a rejection would leave the role", async () => {
+      user.role = "courier"
+
+      await expect(service.rejectCourier(PRINCIPAL)).rejects.toBeInstanceOf(ConflictException)
+      expect(mockApplications.recordRejected).not.toHaveBeenCalled()
+    })
+
+    it("refuses a principal that names no account", async () => {
+      mockPrincipalResolver.userIdForPrincipal.mockResolvedValue(null)
+
+      await expect(service.rejectCourier(PRINCIPAL)).rejects.toBeInstanceOf(NotFoundException)
+      expect(mockApplications.recordRejected).not.toHaveBeenCalled()
+    })
+
+    it("refuses an account that filed no application", async () => {
+      mockApplications.findByUser.mockReset().mockResolvedValue(null)
+
+      await expect(service.rejectCourier(PRINCIPAL)).rejects.toThrow(
+        `No courier application is filed under principal ${PRINCIPAL}`
+      )
+      expect(mockApplications.recordRejected).not.toHaveBeenCalled()
+    })
+
+    it.each(["approved", "rejected"] as const)("refuses an application that is already %s", async (status) => {
+      mockApplications.findByUser.mockReset().mockResolvedValue(anApplication(status))
+
+      await expect(service.rejectCourier(PRINCIPAL)).rejects.toThrow(
+        `The courier application of principal ${PRINCIPAL} is ${status}, not pending`
+      )
+      expect(mockApplications.recordRejected).not.toHaveBeenCalled()
+    })
+
+    it("answers 409 when an approval decided the application first", async () => {
+      mockApplications.findByUser
+        .mockReset()
+        .mockResolvedValueOnce(anApplication("pending"))
+        .mockResolvedValueOnce(anApplication("approved"))
+      mockApplications.recordRejected.mockResolvedValue(false)
+
+      await expect(service.rejectCourier(PRINCIPAL)).rejects.toBeInstanceOf(ConflictException)
+    })
   })
 })

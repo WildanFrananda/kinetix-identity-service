@@ -3,7 +3,7 @@ import type MerchantVerificationEntity from "../domain/entities/merchant_verific
 
 type SellerApplicationStatus = "pending" | "verified" | "rejected"
 
-type CourierApplicationStatus = "pending" | "approved"
+type CourierApplicationStatus = "pending" | "approved" | "rejected"
 
 type SellerApplicationView = {
   applicationId: number
@@ -37,6 +37,7 @@ type CourierApplicationView = {
   status: CourierApplicationStatus
   filedAt: string
   approvedAt: string | null
+  rejectedAt: string | null
 }
 
 type CourierFiling = {

@@ -14,7 +14,7 @@ import UserTypeormEntity from "./user_typeorm.entity"
 
 @Entity("courier_applications")
 @Unique("UQ_courier_applications_user", ["userId"])
-@Check("CK_courier_applications_status", `"status" IN ('pending', 'approved')`)
+@Check("CK_courier_applications_status", `"status" IN ('pending', 'approved', 'rejected')`)
 class CourierApplicationTypeormEntity {
   @PrimaryGeneratedColumn()
   id!: number
@@ -37,13 +37,16 @@ class CourierApplicationTypeormEntity {
   driverId!: string | null
 
   @Column({ type: "varchar", length: 16, default: "pending" })
-  status!: "pending" | "approved"
+  status!: "pending" | "approved" | "rejected"
 
   @CreateDateColumn({ type: "timestamptz" })
   filedAt!: Date
 
   @Column({ type: "timestamptz", nullable: true })
   approvedAt!: Date | null
+
+  @Column({ type: "timestamptz", nullable: true })
+  rejectedAt!: Date | null
 }
 
 export default CourierApplicationTypeormEntity

@@ -66,6 +66,17 @@ class CourierOnboardingController {
   ): Promise<ApproveCourierOutputDto> {
     return await this.courierOnboardingUsecase.approveCourier(principalId)
   }
+
+  @Post(":principalId/reject")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles("admin")
+  @AdminAudit("identity.courier_reject", "principalId")
+  async rejectCourier(
+    @Param("principalId", new ParseUUIDPipe()) principalId: string
+  ): Promise<CourierApplicationView> {
+    return await this.courierOnboardingUsecase.rejectCourier(principalId)
+  }
 }
 
 export default CourierOnboardingController

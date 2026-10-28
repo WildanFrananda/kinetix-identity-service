@@ -5,7 +5,7 @@ import { decimalInteger } from "./decimal_integer.transform"
 
 class ListCourierApplicationsQueryDto {
   @IsOptional()
-  @IsIn(["pending", "approved"])
+  @IsIn(["pending", "approved", "rejected"])
   status?: CourierApplicationStatus
 
   @IsOptional()

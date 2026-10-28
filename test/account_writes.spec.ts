@@ -370,6 +370,66 @@ describeWithDatabase("account writes against a real database", () => {
       ])
     })
 
+    it("rejects a pending courier application once, and a new filing reopens it", async () => {
+      const account = await anAccount("rejected-courier@kinetix.test")
+      const principalId = await aPrincipal()
+
+      await couriers.recordFiled({ userId: account.id, principalId, driverId: 42 })
+      const before = await couriers.findByUser(account.id)
+
+      const first = await couriers.recordRejected(account.id)
+      const second = await couriers.recordRejected(account.id)
+      const rejected = await couriers.findByUser(account.id)
+
+      await couriers.recordFiled({ userId: account.id, principalId, driverId: 43 })
+      const reopened = await couriers.findByUser(account.id)
+
+      expect([first, second]).toEqual([true, false])
+      expect(rejected).toEqual(expect.objectContaining({ status: "rejected", approvedAt: null }))
+      expect(rejected?.rejectedAt).not.toBeNull()
+      expect(reopened).toEqual(
+        expect.objectContaining({ status: "pending", driverId: 43, rejectedAt: null, approvedAt: null })
+      )
+      expect(Date.parse(reopened?.filedAt ?? "")).toBeGreaterThanOrEqual(Date.parse(before?.filedAt ?? ""))
+    })
+
+    it("never rejects an approved courier application, and a new filing keeps it approved", async () => {
+      const account = await anAccount("approved-courier@kinetix.test")
+      const principalId = await aPrincipal()
+
+      await couriers.recordFiled({ userId: account.id, principalId, driverId: 42 })
+      await couriers.recordApproved({ userId: account.id, principalId, driverId: 42 })
+
+      const refused = await couriers.recordRejected(account.id)
+      await couriers.recordFiled({ userId: account.id, principalId, driverId: 42 })
+      const after = await couriers.findByUser(account.id)
+
+      expect(refused).toBe(false)
+      expect(after).toEqual(expect.objectContaining({ status: "approved", rejectedAt: null }))
+    })
+
+    it("lists rejected courier applications apart", async () => {
+      const kept = await anAccount("kept@kinetix.test")
+      const turnedAway = await anAccount("turned-away@kinetix.test")
+
+      await couriers.recordFiled({ userId: kept.id, principalId: await aPrincipal(), driverId: 1 })
+      await couriers.recordFiled({ userId: turnedAway.id, principalId: await aPrincipal(), driverId: 2 })
+      await couriers.recordRejected(turnedAway.id)
+
+      const pending = await couriers.list({ status: "pending", afterId: 0, limit: 10 })
+      const rejected = await couriers.list({ status: "rejected", afterId: 0, limit: 10 })
+
+      expect(pending.applications.map((application) => application.email)).toEqual(["kept@kinetix.test"])
+      expect(rejected.applications.map((application) => application.email)).toEqual(["turned-away@kinetix.test"])
+    })
+
+    it("finds no courier application for an account that filed none", async () => {
+      const account = await anAccount("never-filed@kinetix.test")
+
+      expect(await couriers.findByUser(account.id)).toBeNull()
+      expect(await couriers.recordRejected(account.id)).toBe(false)
+    })
+
     it("refuses a courier application for an account that does not exist", async () => {
       const principalId = await aPrincipal()
 
