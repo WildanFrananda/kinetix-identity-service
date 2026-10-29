@@ -15,6 +15,7 @@ import PasskeyUsecaseService from "../../application/services/passkey_usecase.se
 import AuthTokenOutputDto from "../../application/dto/auth_token_output.dto"
 import PasskeyOptionsInputDto from "../../application/dto/passkey_options_input.dto"
 import PasskeyRegistrationInputDto from "../../application/dto/passkey_registration_input.dto"
+import PasskeyRegistrationOptionsInputDto from "../../application/dto/passkey_registration_options_input.dto"
 import PasskeyRemovalInputDto from "../../application/dto/passkey_removal_input.dto"
 import PasskeyVerifyInputDto from "../../application/dto/passkey_verify_input.dto"
 import type { CallContext } from "../../types/call_context.type"
@@ -73,9 +74,11 @@ class PasskeyController {
   @AdminAudit("identity.passkey_options", "id")
   async registrationOptions(
     @CurrentUser() claims: AccessClaims,
-    @AccountIdParam("id") userId: number
+    @AccountIdParam("id") userId: number,
+    @Body() dto: PasskeyRegistrationOptionsInputDto,
+    @RequestContext() context: CallContext
   ): Promise<PasskeyRegistrationOptions> {
-    return await this.passkeyUsecase.registrationOptions(claims, userId)
+    return await this.passkeyUsecase.registrationOptions(claims, userId, dto.password, context)
   }
 
   @Post("passkeys/:id")
