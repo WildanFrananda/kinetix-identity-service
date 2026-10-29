@@ -14,6 +14,8 @@ const COURIER_PRINCIPAL = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 
 const EMPTY_PAGE = { applications: [], nextAfterId: null }
 
+const TALLY = { since: "2026-10-28T17:00:00.000Z", approved: 2, rejected: 1 }
+
 describe("identity's HTTP routes", () => {
   let app: NestFastifyApplication
   let auth: Record<string, jest.Mock>
@@ -26,12 +28,14 @@ describe("identity's HTTP routes", () => {
     couriers = {
       approveCourier: jest.fn().mockResolvedValue({ principalId: COURIER_PRINCIPAL }),
       rejectCourier: jest.fn().mockResolvedValue({ principalId: COURIER_PRINCIPAL, status: "rejected" }),
+      tally: jest.fn().mockResolvedValue(TALLY),
       listApplications: jest.fn().mockResolvedValue(EMPTY_PAGE)
     }
     sellers = {
       listApplications: jest.fn().mockResolvedValue(EMPTY_PAGE),
       applicationOf: jest.fn().mockResolvedValue({ userId: 7, status: "pending" }),
-      rejectVerification: jest.fn().mockResolvedValue({ userId: 7, status: "rejected" })
+      rejectVerification: jest.fn().mockResolvedValue({ userId: 7, status: "rejected" }),
+      tally: jest.fn().mockResolvedValue(TALLY)
     }
     profiles = { updateProfile: jest.fn().mockResolvedValue({}) }
 
@@ -168,6 +172,45 @@ describe("identity's HTTP routes", () => {
         expect(sellers.listApplications).not.toHaveBeenCalled()
       }
     )
+  })
+
+  describe("decision tallies", () => {
+    it.each(["sellers", "couriers"])("counts the %s decided since an instant with its offset", async (queue) => {
+      const response = await send(app, {
+        method: "GET",
+        url: `/api/v1/${queue}/applications/tally?since=2026-10-29T00:00:00%2B07:00`,
+        headers: { [CALLER_HEADER]: "admin" }
+      })
+      const service = queue === "sellers" ? sellers : couriers
+
+      expect(response.statusCode).toBe(200)
+      expect(response.json()).toEqual(TALLY)
+      expect(service.tally).toHaveBeenCalledWith(new Date("2026-10-28T17:00:00.000Z"))
+    })
+
+    it.each(["", "since=2026-10-29", "since=2026-10-29T00:00:00", "since=yesterday", "since=2026-13-45T99:00:00Z"])(
+      "refuses a tally asked with '%s'",
+      async (query) => {
+        const response = await send(app, {
+          method: "GET",
+          url: `/api/v1/sellers/applications/tally?${query}`,
+          headers: { [CALLER_HEADER]: "admin" }
+        })
+
+        expect(response.statusCode).toBe(400)
+        expect(sellers.tally).not.toHaveBeenCalled()
+      }
+    )
+
+    it("is an admin's only", async () => {
+      const response = await send(app, {
+        method: "GET",
+        url: "/api/v1/couriers/applications/tally?since=2026-10-29T00:00:00Z",
+        headers: { [CALLER_HEADER]: "customer8" }
+      })
+
+      expect(response.statusCode).toBe(403)
+    })
   })
 
   describe("a seller application", () => {

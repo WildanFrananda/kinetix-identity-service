@@ -5,6 +5,7 @@ import MissingReferenceError from "../../../domain/errors/missing_reference.erro
 import CourierApplicationRepositoryPort from "../../../domain/ports/courier_application_repository.port"
 import type {
   ApplicationPage,
+  ApplicationTally,
   ApplicationQuery,
   CourierApplicationStatus,
   CourierApplicationView,
@@ -94,6 +95,18 @@ class TypeormCourierApplicationRepositoryAdapter implements CourierApplicationRe
       applications: page.map((record) => this.toView(record)),
       nextAfterId: hasMore ? page[page.length - 1].id : null
     }
+  }
+
+  async tally(since: Date): Promise<ApplicationTally> {
+    const [row] = await this.repo.query(
+      `SELECT
+         count(*) FILTER (WHERE "status" = 'approved' AND "approvedAt" >= $1::timestamptz) AS "approved",
+         count(*) FILTER (WHERE "status" = 'rejected' AND "rejectedAt" >= $1::timestamptz) AS "rejected"
+       FROM "courier_applications"`,
+      [since.toISOString()]
+    )
+
+    return { since: since.toISOString(), approved: Number(row.approved), rejected: Number(row.rejected) }
   }
 
   private async write(filing: CourierFiling, sql: string): Promise<void> {

@@ -430,6 +430,74 @@ describeWithDatabase("account writes against a real database", () => {
       expect(await couriers.recordRejected(account.id)).toBe(false)
     })
 
+    it("counts seller decisions since an instant, as the applications stand now", async () => {
+      const since = new Date("2026-10-28T17:00:00.000Z")
+      const before = new Date("2026-10-28T16:59:59.000Z")
+      const after = new Date("2026-10-28T18:30:00.000Z")
+      const filings: Array<["pending" | "verified" | "rejected", Date | undefined, Date | undefined]> = [
+        ["verified", after, undefined],
+        ["verified", before, undefined],
+        ["rejected", undefined, after],
+        ["rejected", undefined, before],
+        ["rejected", undefined, undefined],
+        ["pending", undefined, undefined]
+      ]
+
+      for (const [index, [status, verifiedAt, rejectedAt]] of filings.entries()) {
+        const account = await anAccount(`tally-seller-${index}@kinetix.test`)
+        await verifications.save(
+          new MerchantVerificationEntity(
+            0,
+            account.id,
+            `Store ${index}`,
+            "brn",
+            "tax",
+            status,
+            verifiedAt,
+            "Jl. Cikini",
+            "Jakarta",
+            "10330",
+            rejectedAt
+          )
+        )
+      }
+
+      expect(await verifications.tally(since)).toEqual({ since: since.toISOString(), approved: 1, rejected: 1 })
+    })
+
+    it("counts courier decisions since an instant", async () => {
+      const since = new Date("2026-10-28T17:00:00.000Z")
+      const decided: Array<["approved" | "rejected" | "pending", string | null]> = [
+        ["approved", "2026-10-28T18:00:00Z"],
+        ["approved", "2026-10-27T18:00:00Z"],
+        ["rejected", "2026-10-28T17:00:00Z"],
+        ["pending", null]
+      ]
+
+      for (const [index, [status, at]] of decided.entries()) {
+        const account = await anAccount(`tally-courier-${index}@kinetix.test`)
+        const principalId = await aPrincipal()
+        await couriers.recordFiled({ userId: account.id, principalId, driverId: index + 1 })
+        if (status === "approved") {
+          await couriers.recordApproved({ userId: account.id, principalId, driverId: index + 1 })
+          await dataSource.query(`UPDATE "courier_applications" SET "approvedAt" = $1 WHERE "userId" = $2`, [
+            at,
+            account.id
+          ])
+        }
+
+        if (status === "rejected") {
+          await couriers.recordRejected(account.id)
+          await dataSource.query(`UPDATE "courier_applications" SET "rejectedAt" = $1 WHERE "userId" = $2`, [
+            at,
+            account.id
+          ])
+        }
+      }
+
+      expect(await couriers.tally(since)).toEqual({ since: since.toISOString(), approved: 1, rejected: 1 })
+    })
+
     it("refuses a courier application for an account that does not exist", async () => {
       const principalId = await aPrincipal()
 

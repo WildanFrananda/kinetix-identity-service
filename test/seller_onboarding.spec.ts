@@ -248,6 +248,7 @@ describe("SellerOnboardingUsecaseService Unit Tests", () => {
     const rejected = await service.rejectVerification(1)
 
     expect(rejected.status).toBe("rejected")
+    expect(rejected.rejectedAt).toBeInstanceOf(Date)
     expect(mockUserRepo.save).not.toHaveBeenCalled()
     expect(mockMerchantRepo.save).not.toHaveBeenCalled()
   })
@@ -306,6 +307,7 @@ describe("SellerOnboardingUsecaseService Unit Tests", () => {
   it("lets a rejected applicant file again, as pending", async () => {
     const rejected = pending()
     rejected.status = "rejected"
+    rejected.rejectedAt = new Date("2026-10-28T09:00:00.000Z")
     mockVerificationRepo.findByUserId.mockResolvedValue(rejected)
     mockVerificationRepo.save.mockImplementation(async (v: MerchantVerificationEntity) => v)
 
@@ -319,6 +321,15 @@ describe("SellerOnboardingUsecaseService Unit Tests", () => {
     })
 
     expect(refiled.status).toBe("pending")
+    expect(refiled.rejectedAt).toBeUndefined()
+  })
+
+  it("counts the decisions since an instant through the repository", async () => {
+    const since = new Date("2026-10-28T17:00:00.000Z")
+    mockVerificationRepo.tally = jest.fn().mockResolvedValue({ since: since.toISOString(), approved: 3, rejected: 1 })
+
+    expect(await service.tally(since)).toEqual({ since: since.toISOString(), approved: 3, rejected: 1 })
+    expect(mockVerificationRepo.tally).toHaveBeenCalledWith(since)
   })
 
   it("should not collide when two stores share a name", async () => {

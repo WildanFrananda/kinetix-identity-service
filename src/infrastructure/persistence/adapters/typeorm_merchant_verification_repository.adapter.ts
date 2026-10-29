@@ -7,6 +7,7 @@ import RecordConflictError from "../../../domain/errors/record_conflict.error"
 import MerchantVerificationRepositoryPort from "../../../domain/ports/merchant_verification_repository.port"
 import type {
   ApplicationPage,
+  ApplicationTally,
   ApplicationQuery,
   SellerApplicationStatus,
   SellerApplicationView
@@ -36,6 +37,7 @@ class TypeormMerchantVerificationRepositoryAdapter implements MerchantVerificati
       taxId: merchantVerification.taxId,
       status: merchantVerification.status,
       verifiedAt: merchantVerification.verifiedAt,
+      rejectedAt: merchantVerification.rejectedAt ?? null,
       streetAddress: merchantVerification.streetAddress,
       city: merchantVerification.city,
       postalCode: merchantVerification.postalCode
@@ -92,10 +94,25 @@ class TypeormMerchantVerificationRepositoryAdapter implements MerchantVerificati
         city: record.city,
         postalCode: record.postalCode,
         status: record.status,
-        verifiedAt: record.verifiedAt ? record.verifiedAt.toISOString() : null
+        verifiedAt: record.verifiedAt ? record.verifiedAt.toISOString() : null,
+        rejectedAt: record.rejectedAt ? record.rejectedAt.toISOString() : null
       })),
       nextAfterId: hasMore ? page[page.length - 1].id : null
     }
+  }
+
+  async tally(since: Date): Promise<ApplicationTally> {
+    const [row] = await this.repo.query(
+      `SELECT
+         count(*) FILTER (
+           WHERE "status" = 'verified' AND ("verifiedAt" AT TIME ZONE 'UTC') >= $1::timestamptz
+         ) AS "approved",
+         count(*) FILTER (WHERE "status" = 'rejected' AND "rejectedAt" >= $1::timestamptz) AS "rejected"
+       FROM "merchant_verifications"`,
+      [since.toISOString()]
+    )
+
+    return { since: since.toISOString(), approved: Number(row.approved), rejected: Number(row.rejected) }
   }
 
   private async principalsOf(userIds: number[]): Promise<Map<string, string>> {
@@ -129,7 +146,8 @@ class TypeormMerchantVerificationRepositoryAdapter implements MerchantVerificati
       record.verifiedAt,
       record.streetAddress,
       record.city,
-      record.postalCode
+      record.postalCode,
+      record.rejectedAt ?? undefined
     )
   }
 }
