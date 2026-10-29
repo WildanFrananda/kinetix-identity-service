@@ -33,6 +33,7 @@ type TwoFactorChallenge = {
   mfaRequired: true
   challengeToken: string
   expiresIn: number
+  passkeys: boolean
 }
 
 type TwoFactorSetup = {

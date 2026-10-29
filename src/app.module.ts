@@ -12,6 +12,8 @@ import MerchantTypeormEntity from "./infrastructure/persistence/entities/merchan
 import CourierApplicationTypeormEntity from "./infrastructure/persistence/entities/courier_application_typeorm.entity"
 import AccountSignInAttemptTypeormEntity from "./infrastructure/persistence/entities/account_sign_in_attempt_typeorm.entity"
 import TwoFactorChallengeAttemptTypeormEntity from "./infrastructure/persistence/entities/two_factor_challenge_attempt_typeorm.entity"
+import PasskeyTypeormEntity from "./infrastructure/persistence/entities/passkey_typeorm.entity"
+import PasskeyChallengeTypeormEntity from "./infrastructure/persistence/entities/passkey_challenge_typeorm.entity"
 
 import TypeormUserRepositoryAdapter from "./infrastructure/persistence/adapters/typeorm_user_repository.adapter"
 import TypeormProfileRepositoryAdapter from "./infrastructure/persistence/adapters/typeorm_profile_repository.adapter"
@@ -19,6 +21,8 @@ import TypeormMerchantVerificationRepositoryAdapter from "./infrastructure/persi
 import TypeormMerchantRepositoryAdapter from "./infrastructure/persistence/adapters/typeorm_merchant_repository.adapter"
 import TypeormCourierApplicationRepositoryAdapter from "./infrastructure/persistence/adapters/typeorm_courier_application_repository.adapter"
 import TypeormSignInAttemptRepositoryAdapter from "./infrastructure/persistence/adapters/typeorm_sign_in_attempt_repository.adapter"
+import TypeormPasskeyRepositoryAdapter from "./infrastructure/persistence/adapters/typeorm_passkey_repository.adapter"
+import TypeormPasskeyChallengeRepositoryAdapter from "./infrastructure/persistence/adapters/typeorm_passkey_challenge_repository.adapter"
 
 import AuthUsecaseService from "./application/services/auth_usecase.service"
 import UserProfileUsecaseService from "./application/services/user_profile_usecase.service"
@@ -27,9 +31,11 @@ import CourierOnboardingUsecaseService from "./application/services/courier_onbo
 import CourierRegistrationUsecaseService from "./application/services/courier_registration_usecase.service"
 import SignInAttemptsService from "./application/services/sign_in_attempts.service"
 import ExpiredRecordSweeperService from "./application/services/expired_record_sweeper.service"
+import PasskeyUsecaseService from "./application/services/passkey_usecase.service"
 import FleetRegistryGrpcAdapter from "./infrastructure/mesh/fleet_registry_grpc.adapter"
 
 import AuthController from "./adapters/controllers/auth.controller"
+import PasskeyController from "./adapters/controllers/passkey.controller"
 import HealthController from "./adapters/controllers/health.controller"
 import UserProfileController from "./adapters/controllers/user_profile.controller"
 import SellerOnboardingController from "./adapters/controllers/seller_onboarding.controller"
@@ -53,6 +59,7 @@ import RolesGuard from "./adapters/guards/roles.guard"
 import SelfOrStaffGuard from "./adapters/guards/self_or_staff.guard"
 import JwksController from "./adapters/controllers/jwks.controller"
 import { CLIENT_GATE_PROVIDER } from "./infrastructure/attestation/client_gate.provider"
+import { PASSKEY_CEREMONY_PROVIDER } from "./infrastructure/webauthn/passkey_ceremony.provider"
 import { positiveIntegerSetting, requiredSetting } from "./infrastructure/config/required_setting"
 import { DEFAULT_THROTTLE } from "./infrastructure/http/throttle_policy"
 
@@ -86,7 +93,9 @@ const DATABASE_CONNECT_TIMEOUT_MS = 5000
             GeocodedAddressTypeormEntity,
             CourierApplicationTypeormEntity,
             AccountSignInAttemptTypeormEntity,
-            TwoFactorChallengeAttemptTypeormEntity
+            TwoFactorChallengeAttemptTypeormEntity,
+            PasskeyTypeormEntity,
+            PasskeyChallengeTypeormEntity
           ],
           synchronize: false
         }
@@ -104,7 +113,9 @@ const DATABASE_CONNECT_TIMEOUT_MS = 5000
       GeocodedAddressTypeormEntity,
       CourierApplicationTypeormEntity,
       AccountSignInAttemptTypeormEntity,
-      TwoFactorChallengeAttemptTypeormEntity
+      TwoFactorChallengeAttemptTypeormEntity,
+      PasskeyTypeormEntity,
+      PasskeyChallengeTypeormEntity
     ])
   ],
   controllers: [
@@ -112,6 +123,7 @@ const DATABASE_CONNECT_TIMEOUT_MS = 5000
     MetricsController,
     JwksController,
     AuthController,
+    PasskeyController,
     UserProfileController,
     SellerOnboardingController,
     CourierOnboardingController,
@@ -123,6 +135,7 @@ const DATABASE_CONNECT_TIMEOUT_MS = 5000
     TokenService,
     PrincipalResolverService,
     CLIENT_GATE_PROVIDER,
+    PASSKEY_CEREMONY_PROVIDER,
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard
@@ -130,6 +143,7 @@ const DATABASE_CONNECT_TIMEOUT_MS = 5000
     RolesGuard,
     SelfOrStaffGuard,
     AuthUsecaseService,
+    PasskeyUsecaseService,
     SignInAttemptsService,
     ExpiredRecordSweeperService,
     UserProfileUsecaseService,
@@ -160,6 +174,14 @@ const DATABASE_CONNECT_TIMEOUT_MS = 5000
     {
       provide: "SignInAttemptRepositoryPort",
       useClass: TypeormSignInAttemptRepositoryAdapter
+    },
+    {
+      provide: "PasskeyRepositoryPort",
+      useClass: TypeormPasskeyRepositoryAdapter
+    },
+    {
+      provide: "PasskeyChallengeRepositoryPort",
+      useClass: TypeormPasskeyChallengeRepositoryAdapter
     },
     {
       provide: "FleetRegistryPort",

@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from "@nestjs/common"
+import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from "@nestjs/common"
+import PasskeyChallengeRepositoryPort from "../../domain/ports/passkey_challenge_repository.port"
 import SignInAttemptsService from "./sign_in_attempts.service"
 import TokenService from "./token.service"
 
@@ -11,13 +12,16 @@ class ExpiredRecordSweeperService implements OnApplicationBootstrap, OnModuleDes
 
   constructor(
     private readonly signInAttempts: SignInAttemptsService,
-    private readonly tokenService: TokenService
+    private readonly tokenService: TokenService,
+    @Inject("PasskeyChallengeRepositoryPort")
+    private readonly passkeyChallenges: PasskeyChallengeRepositoryPort
   ) {}
 
   onApplicationBootstrap(): void {
     this.timer = setInterval(() => {
       void this.sweep()
     }, SWEEP_INTERVAL_MS)
+
     this.timer.unref()
   }
 
@@ -32,10 +36,11 @@ class ExpiredRecordSweeperService implements OnApplicationBootstrap, OnModuleDes
     try {
       const attempts: number = await this.signInAttempts.sweep()
       const revocations: number = await this.tokenService.sweepExpiredRevocations()
+      const challenges: number = await this.passkeyChallenges.sweep()
 
       this.logger.log({
         message: "expired sign-in records swept",
-        fields: { sign_in_attempts: attempts, revoked_access_tokens: revocations }
+        fields: { sign_in_attempts: attempts, revoked_access_tokens: revocations, passkey_challenges: challenges }
       })
     } catch (error: unknown) {
       this.logger.warn({

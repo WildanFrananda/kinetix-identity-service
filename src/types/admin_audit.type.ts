@@ -11,6 +11,10 @@ type AdminAction =
   | "identity.courier_reject"
   | "identity.profile_read"
   | "identity.profile_update"
+  | "identity.passkeys_list"
+  | "identity.passkey_options"
+  | "identity.passkey_add"
+  | "identity.passkey_remove"
 
 type AdminActionOutcome = "done" | "refused" | "failed"
 

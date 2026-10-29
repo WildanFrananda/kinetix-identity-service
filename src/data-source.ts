@@ -18,12 +18,15 @@ import { SignInAttempts1789640000000 } from "./migrations/1789640000000-SignInAt
 import { RefreshTokenClient1789650000000 } from "./migrations/1789650000000-RefreshTokenClient"
 import { CourierApplicationRejection1789660000000 } from "./migrations/1789660000000-CourierApplicationRejection"
 import { SellerApplicationRejectedAt1789670000000 } from "./migrations/1789670000000-SellerApplicationRejectedAt"
+import { Passkeys1789680000000 } from "./migrations/1789680000000-Passkeys"
 
 import AccountSignInAttemptTypeormEntity from "./infrastructure/persistence/entities/account_sign_in_attempt_typeorm.entity"
 import CourierApplicationTypeormEntity from "./infrastructure/persistence/entities/courier_application_typeorm.entity"
 import GeocodedAddressTypeormEntity from "./infrastructure/persistence/entities/geocoded_address_typeorm.entity"
 import MerchantTypeormEntity from "./infrastructure/persistence/entities/merchant_typeorm.entity"
 import MerchantVerificationTypeormEntity from "./infrastructure/persistence/entities/merchant_verification_typeorm.entity"
+import PasskeyChallengeTypeormEntity from "./infrastructure/persistence/entities/passkey_challenge_typeorm.entity"
+import PasskeyTypeormEntity from "./infrastructure/persistence/entities/passkey_typeorm.entity"
 import PrincipalAliasTypeormEntity from "./infrastructure/persistence/entities/principal_alias_typeorm.entity"
 import PrincipalTypeormEntity from "./infrastructure/persistence/entities/principal_typeorm.entity"
 import ProfileTypeormEntity from "./infrastructure/persistence/entities/profile_typeorm.entity"
@@ -52,7 +55,9 @@ export default new DataSource({
     GeocodedAddressTypeormEntity,
     CourierApplicationTypeormEntity,
     AccountSignInAttemptTypeormEntity,
-    TwoFactorChallengeAttemptTypeormEntity
+    TwoFactorChallengeAttemptTypeormEntity,
+    PasskeyTypeormEntity,
+    PasskeyChallengeTypeormEntity
   ],
   migrations: [
     InitialSchema1788322826135,
@@ -72,7 +77,8 @@ export default new DataSource({
     SignInAttempts1789640000000,
     RefreshTokenClient1789650000000,
     CourierApplicationRejection1789660000000,
-    SellerApplicationRejectedAt1789670000000
+    SellerApplicationRejectedAt1789670000000,
+    Passkeys1789680000000
   ],
   synchronize: false
 })

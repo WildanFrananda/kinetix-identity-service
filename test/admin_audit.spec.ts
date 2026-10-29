@@ -20,6 +20,7 @@ type LoggedEvent = { message: string; requestId?: string | null; fields?: Record
 async function actionsCounted(action: string, outcome: string): Promise<number> {
   const metric = await metricsRegistry.getSingleMetric("kinetix_admin_actions_total")?.get()
   const sample = metric?.values.find((value) => value.labels.action === action && value.labels.outcome === outcome)
+
   return sample?.value ?? 0
 }
 
@@ -46,12 +47,14 @@ describe("the admin audit", () => {
       rejectVerification: jest.fn().mockResolvedValue({ userId: 7, status: "rejected" }),
       tally: jest.fn().mockResolvedValue({ since: "2026-10-29T00:00:00.000Z", approved: 0, rejected: 0 })
     }
+
     couriers = {
       listApplications: jest.fn().mockResolvedValue({ applications: [], nextAfterId: null }),
       approveCourier: jest.fn().mockResolvedValue({ principalId: COURIER_PRINCIPAL }),
       rejectCourier: jest.fn().mockResolvedValue({ principalId: COURIER_PRINCIPAL, status: "rejected" }),
       tally: jest.fn().mockResolvedValue({ since: "2026-10-29T00:00:00.000Z", approved: 0, rejected: 0 })
     }
+
     profiles = {
       getProfile: jest.fn().mockResolvedValue({ userId: 7 }),
       updateProfile: jest.fn().mockResolvedValue({ userId: 7 })
@@ -100,6 +103,7 @@ describe("the admin audit", () => {
         }
       }
     ])
+
     expect(await actionsCounted("identity.seller_verify", "done")).toBe(before + 1)
   })
 
@@ -194,7 +198,7 @@ describe("the admin audit", () => {
   it("publishes the sign-in failure series at zero as well", async () => {
     const text = await metricsRegistry.metrics()
 
-    for (const stage of ["password", "two_factor"]) {
+    for (const stage of ["password", "two_factor", "passkey"]) {
       for (const role of ["admin", "other"]) {
         expect(text).toContain(`kinetix_identity_sign_in_failures_total{stage="${stage}",role="${role}"}`)
       }

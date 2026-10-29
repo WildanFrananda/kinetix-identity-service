@@ -1,6 +1,7 @@
 import UserEntity from "../src/domain/entities/user.entity"
 import AuthUsecaseService from "../src/application/services/auth_usecase.service"
 import SignInAttemptsService from "../src/application/services/sign_in_attempts.service"
+import InMemoryPasskeys from "./support/in_memory_passkeys"
 import InMemorySignInAttempts from "./support/in_memory_sign_in_attempts"
 import InMemoryUsers from "./support/in_memory_users"
 import { labClientGate, unnamedContext } from "./support/client_gates"
@@ -20,13 +21,16 @@ describe("refreshing a session", () => {
         .mockResolvedValue(PRINCIPAL),
       syncKind: jest.fn().mockResolvedValue(undefined)
     }
+
     const auth = new AuthUsecaseService(
       users,
       tokens,
       principals as any,
       new SignInAttemptsService(new InMemorySignInAttempts()),
-      labClientGate()
+      labClientGate(),
+      new InMemoryPasskeys()
     )
+
     const pair = await tokens.issuePair({ id: 5, email: "customer@kinetix.test", role: "customer" }, PRINCIPAL, null)
     const context = unnamedContext("req-refresh")
 

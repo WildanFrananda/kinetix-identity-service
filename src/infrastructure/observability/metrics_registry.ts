@@ -43,7 +43,7 @@ const buildInfo = new Gauge({
 
 const signInFailuresTotal = new Counter({
   name: "kinetix_identity_sign_in_failures_total",
-  help: "Wrong passwords and wrong or reused two-factor codes, by stage and by whether the account is an admin.",
+  help: "Wrong passwords, wrong or reused codes and refused passkeys, by stage and by whether the account is an admin.",
   labelNames: ["stage", "role"] as const,
   registers: [metricsRegistry]
 })
@@ -62,7 +62,7 @@ const clientProofRefusalsTotal = new Counter({
   registers: [metricsRegistry]
 })
 
-const SIGN_IN_STAGES: readonly SignInStage[] = ["password", "two_factor"]
+const SIGN_IN_STAGES: readonly SignInStage[] = ["password", "two_factor", "passkey"]
 
 const SIGN_IN_ROLES: readonly SignInRole[] = ["admin", "other"]
 

@@ -29,11 +29,19 @@ type ChallengeAdmission =
   | { outcome: "delayed"; retryAfterSeconds: number }
   | { outcome: "exhausted" }
 
-type SignInStage = "password" | "two_factor"
+type SignInStage = "password" | "two_factor" | "passkey"
 
 type SignInRole = "admin" | "other"
 
-type SignInFailureReason = "unknown_account" | "wrong_password" | "wrong_code" | "code_reused"
+type SignInFailureReason =
+  | "unknown_account"
+  | "wrong_password"
+  | "wrong_code"
+  | "code_reused"
+  | "unknown_passkey"
+  | "passkey_refused"
+  | "no_passkey_challenge"
+  | "sign_count_regressed"
 
 type SignInFailure = {
   stage: SignInStage
@@ -41,6 +49,7 @@ type SignInFailure = {
   email: string
   user: UserEntity | null
   attempt: AdmittedAttempt
+  detail?: string
 }
 
 export type {
