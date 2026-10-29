@@ -310,6 +310,16 @@ for the same reason seller approval refuses one that is not pending; an approval
 approved, because the approval's upsert wins. Neither takes a reason: there is no column for one, for sellers or
 couriers, and adding it is a product decision (infra `docs/BACKOFFICE.md` §7.2).
 
+`GET /api/v1/sellers/applications/tally?since=` and `GET /api/v1/couriers/applications/tally?since=` (2026-10-29, the
+user's ruling for the backoffice's daily, weekly and monthly counts) answer `{ since, approved, rejected }`: the
+applications whose current decision was taken at or after `since`, an instant with its offset (the client sends the
+start of its own day, week or month, so identity keeps no time zone). They count applications as they stand now, not
+a log of decisions: a rejected application filed again is pending and no longer counted, and a seller rejected before
+`SellerApplicationRejectedAt1789670000000` has no `rejectedAt` and is never counted. Seller `verifiedAt` is a
+`timestamp` without zone, written in the container's time zone (UTC), so the count reads it `AT TIME ZONE 'UTC'`; the
+new `rejectedAt` columns are `timestamptz`. A date that does not exist (month 13) is refused 400: the format check
+alone let it through and `new Date` made it Invalid Date.
+
 Seller applications name the applicant's principal (`principalId`, `null` when the account never signed in) in the list,
 the read and the rejection, and an approval returns the merchant with it, so an admin has the id other services key on.
 Courier applications and approvals already carried it. Courier

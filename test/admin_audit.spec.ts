@@ -43,12 +43,14 @@ describe("the admin audit", () => {
       applicationOf: jest.fn().mockResolvedValue({ userId: 7, status: "pending", principalId: null }),
       onboardSeller: jest.fn().mockResolvedValue({ userId: 7, status: "pending" }),
       approveVerification: jest.fn().mockResolvedValue({ userId: 7, status: "verified" }),
-      rejectVerification: jest.fn().mockResolvedValue({ userId: 7, status: "rejected" })
+      rejectVerification: jest.fn().mockResolvedValue({ userId: 7, status: "rejected" }),
+      tally: jest.fn().mockResolvedValue({ since: "2026-10-29T00:00:00.000Z", approved: 0, rejected: 0 })
     }
     couriers = {
       listApplications: jest.fn().mockResolvedValue({ applications: [], nextAfterId: null }),
       approveCourier: jest.fn().mockResolvedValue({ principalId: COURIER_PRINCIPAL }),
-      rejectCourier: jest.fn().mockResolvedValue({ principalId: COURIER_PRINCIPAL, status: "rejected" })
+      rejectCourier: jest.fn().mockResolvedValue({ principalId: COURIER_PRINCIPAL, status: "rejected" }),
+      tally: jest.fn().mockResolvedValue({ since: "2026-10-29T00:00:00.000Z", approved: 0, rejected: 0 })
     }
     profiles = {
       getProfile: jest.fn().mockResolvedValue({ userId: 7 }),
@@ -153,7 +155,9 @@ describe("the admin audit", () => {
     ["GET", "/api/v1/users/7/profile", "identity.profile_read"],
     ["PUT", "/api/v1/users/7/profile", "identity.profile_update"],
     ["GET", "/api/v1/sellers/7/application", "identity.seller_application_read"],
-    ["GET", "/api/v1/sellers/applications", "identity.seller_applications_list"]
+    ["GET", "/api/v1/sellers/applications", "identity.seller_applications_list"],
+    ["GET", "/api/v1/sellers/applications/tally?since=2026-10-29T00:00:00Z", "identity.seller_applications_tally"],
+    ["GET", "/api/v1/couriers/applications/tally?since=2026-10-29T00:00:00Z", "identity.courier_applications_tally"]
   ])("records an admin's %s %s as %s", async (method, url, action) => {
     await send(app, {
       method: method as "GET" | "PUT",

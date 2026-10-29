@@ -17,6 +17,7 @@ import { NoPlaceholderStoreDescription1789630000000 } from "./migrations/1789630
 import { SignInAttempts1789640000000 } from "./migrations/1789640000000-SignInAttempts"
 import { RefreshTokenClient1789650000000 } from "./migrations/1789650000000-RefreshTokenClient"
 import { CourierApplicationRejection1789660000000 } from "./migrations/1789660000000-CourierApplicationRejection"
+import { SellerApplicationRejectedAt1789670000000 } from "./migrations/1789670000000-SellerApplicationRejectedAt"
 
 import AccountSignInAttemptTypeormEntity from "./infrastructure/persistence/entities/account_sign_in_attempt_typeorm.entity"
 import CourierApplicationTypeormEntity from "./infrastructure/persistence/entities/courier_application_typeorm.entity"
@@ -70,7 +71,8 @@ export default new DataSource({
     NoPlaceholderStoreDescription1789630000000,
     SignInAttempts1789640000000,
     RefreshTokenClient1789650000000,
-    CourierApplicationRejection1789660000000
+    CourierApplicationRejection1789660000000,
+    SellerApplicationRejectedAt1789670000000
   ],
   synchronize: false
 })

@@ -11,6 +11,7 @@ import PrincipalResolverService from "./principal_resolver.service"
 import type {
   ApplicationPage,
   ApplicationQuery,
+  ApplicationTally,
   ApprovedMerchant,
   SellerApplication,
   SellerApplicationStatus,
@@ -58,6 +59,7 @@ class SellerOnboardingUsecaseService {
       existing.city = dto.city
       existing.postalCode = dto.postalCode
       existing.status = "pending"
+      existing.rejectedAt = undefined
       return await this.verificationRepository.save(existing)
     }
 
@@ -129,6 +131,10 @@ class SellerOnboardingUsecaseService {
     return { ...verification, principalId }
   }
 
+  async tally(since: Date): Promise<ApplicationTally> {
+    return await this.verificationRepository.tally(since)
+  }
+
   async listApplications(
     query: ApplicationQuery<SellerApplicationStatus>
   ): Promise<ApplicationPage<SellerApplicationView>> {
@@ -139,6 +145,7 @@ class SellerOnboardingUsecaseService {
     const verification: MerchantVerificationEntity = await this.pendingApplicationOf(userId)
 
     verification.status = "rejected"
+    verification.rejectedAt = new Date()
 
     return await this.withPrincipal(await this.verificationRepository.save(verification))
   }

@@ -1,10 +1,12 @@
 type AdminAction =
   | "identity.seller_applications_list"
+  | "identity.seller_applications_tally"
   | "identity.seller_application_read"
   | "identity.seller_onboard"
   | "identity.seller_verify"
   | "identity.seller_reject"
   | "identity.courier_applications_list"
+  | "identity.courier_applications_tally"
   | "identity.courier_approve"
   | "identity.courier_reject"
   | "identity.profile_read"

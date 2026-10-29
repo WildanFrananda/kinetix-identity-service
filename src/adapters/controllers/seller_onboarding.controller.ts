@@ -1,10 +1,12 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post, Query, UseGuards } from "@nestjs/common"
 import SellerOnboardingUsecaseService from "../../application/services/seller_onboarding_usecase.service"
+import ApplicationTallyQueryDto from "../../application/dto/application_tally_query.dto"
 import ListSellerApplicationsQueryDto from "../../application/dto/list_seller_applications_query.dto"
 import OnboardSellerInputDto from "../../application/dto/onboard_seller_input.dto"
 import MerchantVerificationEntity from "../../domain/entities/merchant_verification.entity"
 import type {
   ApplicationPage,
+  ApplicationTally,
   ApprovedMerchant,
   SellerApplication,
   SellerApplicationView
@@ -28,6 +30,14 @@ class SellerOnboardingController {
     @Query() filter: ListSellerApplicationsQueryDto
   ): Promise<ApplicationPage<SellerApplicationView>> {
     return await this.sellerOnboardingUsecase.listApplications(applicationQueryOf(filter))
+  }
+
+  @Get("applications/tally")
+  @UseGuards(RolesGuard)
+  @Roles("admin")
+  @AdminAudit("identity.seller_applications_tally")
+  async tally(@Query() query: ApplicationTallyQueryDto): Promise<ApplicationTally> {
+    return await this.sellerOnboardingUsecase.tally(new Date(query.since))
   }
 
   @Get(":id/application")

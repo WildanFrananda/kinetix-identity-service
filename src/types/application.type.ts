@@ -18,6 +18,7 @@ type SellerApplicationView = {
   postalCode: string
   status: SellerApplicationStatus
   verifiedAt: string | null
+  rejectedAt: string | null
 }
 
 type SellerApplication = MerchantVerificationEntity & {
@@ -52,6 +53,12 @@ type ApplicationQuery<S> = {
   limit: number
 }
 
+type ApplicationTally = {
+  since: string
+  approved: number
+  rejected: number
+}
+
 type ApplicationPage<V> = {
   applications: V[]
   nextAfterId: number | null
@@ -60,6 +67,7 @@ type ApplicationPage<V> = {
 export type {
   ApplicationPage,
   ApplicationQuery,
+  ApplicationTally,
   ApprovedMerchant,
   CourierApplicationStatus,
   CourierApplicationView,

@@ -14,10 +14,11 @@ import { Throttle, ThrottlerGuard } from "@nestjs/throttler"
 import CourierOnboardingUsecaseService from "../../application/services/courier_onboarding_usecase.service"
 import CourierRegistrationUsecaseService from "../../application/services/courier_registration_usecase.service"
 import ApproveCourierOutputDto from "../../application/dto/approve_courier_output.dto"
+import ApplicationTallyQueryDto from "../../application/dto/application_tally_query.dto"
 import ListCourierApplicationsQueryDto from "../../application/dto/list_courier_applications_query.dto"
 import RegisterCourierInputDto from "../../application/dto/register_courier_input.dto"
 import RegisterCourierOutputDto from "../../application/dto/register_courier_output.dto"
-import type { ApplicationPage, CourierApplicationView } from "../../types/application.type"
+import type { ApplicationPage, ApplicationTally, CourierApplicationView } from "../../types/application.type"
 import type { CallContext } from "../../types/call_context.type"
 import { RequestContext } from "../decorators/request_context.decorator"
 import ClientProofGuard from "../guards/client_proof.guard"
@@ -54,6 +55,14 @@ class CourierOnboardingController {
     @Query() filter: ListCourierApplicationsQueryDto
   ): Promise<ApplicationPage<CourierApplicationView>> {
     return await this.courierOnboardingUsecase.listApplications(applicationQueryOf(filter))
+  }
+
+  @Get("applications/tally")
+  @UseGuards(RolesGuard)
+  @Roles("admin")
+  @AdminAudit("identity.courier_applications_tally")
+  async tally(@Query() query: ApplicationTallyQueryDto): Promise<ApplicationTally> {
+    return await this.courierOnboardingUsecase.tally(new Date(query.since))
   }
 
   @Post(":principalId/approve")

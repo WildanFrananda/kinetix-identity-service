@@ -37,6 +37,9 @@ class MerchantVerificationTypeormEntity {
 
   @Column({ nullable: true })
   verifiedAt?: Date
+
+  @Column({ type: "timestamptz", nullable: true })
+  rejectedAt?: Date | null
 }
 
 export default MerchantVerificationTypeormEntity

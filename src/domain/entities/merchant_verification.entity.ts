@@ -9,6 +9,7 @@ class MerchantVerificationEntity {
   streetAddress: string
   city: string
   postalCode: string
+  rejectedAt?: Date
 
   constructor(
     id: number,
@@ -20,7 +21,8 @@ class MerchantVerificationEntity {
     verifiedAt?: Date,
     streetAddress = "",
     city = "",
-    postalCode = ""
+    postalCode = "",
+    rejectedAt?: Date
   ) {
     this.id = id
     this.userId = userId
@@ -32,6 +34,7 @@ class MerchantVerificationEntity {
     this.streetAddress = streetAddress
     this.city = city
     this.postalCode = postalCode
+    this.rejectedAt = rejectedAt
   }
 }
 

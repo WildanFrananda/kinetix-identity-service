@@ -17,6 +17,7 @@ import PrincipalResolverService from "./principal_resolver.service"
 import type {
   ApplicationPage,
   ApplicationQuery,
+  ApplicationTally,
   CourierApplicationStatus,
   CourierApplicationView
 } from "../../types/application.type"
@@ -42,6 +43,10 @@ class CourierOnboardingUsecaseService {
     query: ApplicationQuery<CourierApplicationStatus>
   ): Promise<ApplicationPage<CourierApplicationView>> {
     return await this.applications.list(query)
+  }
+
+  async tally(since: Date): Promise<ApplicationTally> {
+    return await this.applications.tally(since)
   }
 
   async approveCourier(principalId: string): Promise<ApproveCourierOutputDto> {
