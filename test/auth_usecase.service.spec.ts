@@ -41,6 +41,7 @@ describe("AuthUsecaseService Unit Tests", () => {
   let mockPrincipalResolver: any
   let mockSignInAttempts: any
   let mockClientGate: any
+  let mockPasskeys: any
   let user: UserEntity
 
   beforeEach(() => {
@@ -51,6 +52,7 @@ describe("AuthUsecaseService Unit Tests", () => {
       save: jest.fn(),
       acceptTwoFactorStep: jest.fn().mockResolvedValue(true)
     }
+
     mockTokenService = {
       issuePair: jest.fn().mockResolvedValue({
         accessToken: "mocked_access_token",
@@ -66,6 +68,7 @@ describe("AuthUsecaseService Unit Tests", () => {
       revokeOtherSessions: jest.fn().mockResolvedValue(undefined),
       logout: jest.fn().mockResolvedValue(undefined)
     }
+
     mockPrincipalResolver = {
       resolveOrMintForUser: jest.fn().mockResolvedValue("11111111-2222-3333-4444-555555555555"),
       syncKind: jest.fn().mockResolvedValue(undefined)
@@ -83,12 +86,15 @@ describe("AuthUsecaseService Unit Tests", () => {
       bound: jest.fn()
     }
 
+    mockPasskeys = { existsForUser: jest.fn().mockResolvedValue(false) }
+
     service = new AuthUsecaseService(
       mockUserRepository,
       mockTokenService,
       mockPrincipalResolver,
       mockSignInAttempts,
-      mockClientGate
+      mockClientGate,
+      mockPasskeys
     )
   })
 
@@ -249,6 +255,7 @@ describe("AuthUsecaseService Unit Tests", () => {
       await enable(currentCode(secret))
       jest.clearAllMocks()
       mockUserRepository.acceptTwoFactorStep.mockResolvedValue(true)
+
       return secret
     }
 
@@ -337,8 +344,21 @@ describe("AuthUsecaseService Unit Tests", () => {
 
       expect(res.mfaRequired).toBe(true)
       expect(res.challengeToken).toBeDefined()
+      expect(res.passkeys).toBe(false)
       expect(res.accessToken).toBeUndefined()
       expect(mockTokenService.issuePair).not.toHaveBeenCalled()
+    })
+
+    it("says in the challenge whether the account holds a passkey", async () => {
+      await enabledSecret()
+      mockUserRepository.findByEmail.mockResolvedValue(user)
+      mockPasskeys.existsForUser.mockResolvedValue(true)
+      jest.spyOn(require("bcrypt"), "compare").mockResolvedValue(true as never)
+
+      const res: any = await service.login({ email: user.email, password: "password123" }, CONTEXT)
+
+      expect(res.passkeys).toBe(true)
+      expect(mockPasskeys.existsForUser).toHaveBeenCalledWith(user.id)
     })
 
     it("issues tokens only when the challenge is answered with a valid code", async () => {
@@ -372,6 +392,7 @@ describe("AuthUsecaseService Unit Tests", () => {
       await expect(service.verifyTwoFactor("challenge", currentCode(secret), CONTEXT)).rejects.toThrow(
         "already been answered"
       )
+
       expect(mockTokenService.issuePair).not.toHaveBeenCalled()
     })
 
@@ -382,6 +403,7 @@ describe("AuthUsecaseService Unit Tests", () => {
       await expect(service.verifyTwoFactor("challenge", currentCode(secret), CONTEXT)).rejects.toBeInstanceOf(
         UnauthorizedException
       )
+
       expect(mockTokenService.issuePair).not.toHaveBeenCalled()
     })
 

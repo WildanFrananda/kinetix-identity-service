@@ -61,7 +61,8 @@ class SignInAttemptsService {
         reason: failure.reason,
         account_key: accountKeyOf(failure.email),
         attempts: failure.attempt.attempts,
-        ...(failure.user === null ? {} : { user_id: failure.user.id })
+        ...(failure.user === null ? {} : { user_id: failure.user.id }),
+        ...(failure.detail === undefined ? {} : { detail: failure.detail })
       }
     })
   }

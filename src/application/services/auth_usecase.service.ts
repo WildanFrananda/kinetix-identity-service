@@ -12,6 +12,7 @@ import * as bcrypt from "bcrypt"
 import UserEntity from "../../domain/entities/user.entity"
 import { normalisedEmail } from "../../domain/email_address"
 import ClientMismatchError from "../../domain/errors/client_mismatch.error"
+import PasskeyRepositoryPort from "../../domain/ports/passkey_repository.port"
 import UserRepositoryPort from "../../domain/ports/user_repository.port"
 import { checkedClient, clientNameOf, sessionClientDecision } from "../../domain/session_client"
 import LoginInputDto from "../dto/login_input.dto"
@@ -28,9 +29,15 @@ import { requiresTwoFactor } from "../../domain/two_factor_required"
 import { acceptedStep, generateSecret, otpauthUrl } from "../../infrastructure/crypto/totp"
 import type { Credentials } from "../../types/auth.type"
 import type { CallContext } from "../../types/call_context.type"
+import type { OpenChallenge } from "../../types/open_challenge.type"
 import type { AdmittedAttempt } from "../../types/sign_in_attempt.type"
 import type { AccessClaims, RotatedPair, SessionClaims } from "../../types/token.type"
-import type { TwoFactorChallenge, TwoFactorEnrolment, TwoFactorSetup } from "../../types/two_factor.type"
+import type {
+  MfaChallengeClaims,
+  TwoFactorChallenge,
+  TwoFactorEnrolment,
+  TwoFactorSetup
+} from "../../types/two_factor.type"
 
 const UNKNOWN_ACCOUNT_HASH = "$2b$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidinv"
 
@@ -42,7 +49,9 @@ class AuthUsecaseService {
     private readonly tokenService: TokenService,
     private readonly principalResolver: PrincipalResolverService,
     private readonly signInAttempts: SignInAttemptsService,
-    private readonly clientGate: ClientGateService
+    private readonly clientGate: ClientGateService,
+    @Inject("PasskeyRepositoryPort")
+    private readonly passkeys: PasskeyRepositoryPort
   ) {}
 
   async login(
@@ -57,7 +66,10 @@ class AuthUsecaseService {
         { id: user.id, email: user.email, role: user.role },
         principalId
       )
-      return { mfaRequired: true, challengeToken: challenge.token, expiresIn: challenge.expiresIn }
+
+      const passkeys: boolean = await this.passkeys.existsForUser(user.id)
+
+      return { mfaRequired: true, challengeToken: challenge.token, expiresIn: challenge.expiresIn, passkeys }
     }
 
     if (requiresTwoFactor(user.role)) {
@@ -84,6 +96,38 @@ class AuthUsecaseService {
   }
 
   async verifyTwoFactor(challengeToken: string, code: string, context: CallContext): Promise<AuthTokenOutputDto> {
+    const { claims, user, twoFactorSecret } = await this.openChallenge(challengeToken)
+    const attempt: AdmittedAttempt = await this.admitAnswer(user, claims)
+
+    const step: number | null = acceptedStep(twoFactorSecret, code)
+    if (step === null) {
+      this.signInAttempts.failed(
+        { stage: "two_factor", reason: "wrong_code", email: user.email, user, attempt },
+        context
+      )
+
+      throw new UnauthorizedException({ error: "WRONG_CODE", message: "That code is not valid" })
+    }
+
+    await this.tokenService.consumeMfaChallenge(claims)
+
+    const fresh: boolean = await this.userRepository.acceptTwoFactorStep(user.id, step)
+    if (!fresh) {
+      this.signInAttempts.failed(
+        { stage: "two_factor", reason: "code_reused", email: user.email, user, attempt },
+        context
+      )
+
+      throw new UnauthorizedException({
+        error: "CHALLENGE_SPENT",
+        message: "That code has already been used; sign in again with the next one"
+      })
+    }
+
+    return await this.startSession(user, context)
+  }
+
+  async openChallenge(challengeToken: string): Promise<OpenChallenge> {
     const claims = this.tokenService.peekMfaChallenge(challengeToken)
     await this.tokenService.refuseSpentMfaChallenge(claims)
 
@@ -102,6 +146,10 @@ class AuthUsecaseService {
       })
     }
 
+    return { claims, user, twoFactorSecret: user.twoFactorSecret }
+  }
+
+  async admitAnswer(user: UserEntity, claims: MfaChallengeClaims): Promise<AdmittedAttempt> {
     const attempt: AdmittedAttempt | null = await this.signInAttempts.admitChallengeAttempt(user.email, claims)
     if (attempt === null) {
       throw new UnauthorizedException({
@@ -110,30 +158,14 @@ class AuthUsecaseService {
       })
     }
 
-    const step: number | null = acceptedStep(user.twoFactorSecret, code)
-    if (step === null) {
-      this.signInAttempts.failed(
-        { stage: "two_factor", reason: "wrong_code", email: user.email, user, attempt },
-        context
-      )
-      throw new UnauthorizedException({ error: "WRONG_CODE", message: "That code is not valid" })
-    }
+    return attempt
+  }
 
-    await this.tokenService.consumeMfaChallenge(claims)
+  async confirmPassword(user: UserEntity, password: string, context: CallContext): Promise<AdmittedAttempt> {
+    const attempt: AdmittedAttempt = await this.signInAttempts.admit(user.email)
+    await this.checkPassword(user, password, attempt, context)
 
-    const fresh: boolean = await this.userRepository.acceptTwoFactorStep(user.id, step)
-    if (!fresh) {
-      this.signInAttempts.failed(
-        { stage: "two_factor", reason: "code_reused", email: user.email, user, attempt },
-        context
-      )
-      throw new UnauthorizedException({
-        error: "CHALLENGE_SPENT",
-        message: "That code has already been used; sign in again with the next one"
-      })
-    }
-
-    return await this.startSession(user, context)
+    return attempt
   }
 
   async register(dto: RegisterUserInputDto, context: CallContext): Promise<AuthTokenOutputDto> {
@@ -192,6 +224,7 @@ class AuthUsecaseService {
       if (error instanceof ClientMismatchError) {
         throw this.clientGate.mismatch(error.sessionClient, client, context, user.id)
       }
+
       throw error
     }
 
@@ -211,11 +244,13 @@ class AuthUsecaseService {
 
   async logout(claims: AccessClaims, refreshToken?: string): Promise<void> {
     let familyId: string | undefined
+
     if (refreshToken !== undefined) {
       const refresh = this.tokenService.peekRefresh(refreshToken)
       if (refresh.sub !== claims.sub) {
         throw new ForbiddenException("That refresh token belongs to another account")
       }
+
       familyId = refresh.fam
     }
 
@@ -258,6 +293,7 @@ class AuthUsecaseService {
     const password: string | null = this.passwordToConfirm(claims, dto.password)
 
     const attempt = await this.signInAttempts.admit(user.email)
+
     if (password !== null) {
       await this.checkPassword(user, password, attempt, context)
     }
@@ -399,6 +435,7 @@ class AuthUsecaseService {
         { stage: "password", reason: "wrong_password", email: user.email, user, attempt },
         context
       )
+
       throw new UnauthorizedException("Invalid email or password credentials")
     }
   }
@@ -416,6 +453,7 @@ class AuthUsecaseService {
         { stage: "two_factor", reason: "wrong_code", email: user.email, user, attempt },
         context
       )
+
       throw new UnprocessableEntityException("That code is not valid")
     }
 
@@ -425,6 +463,7 @@ class AuthUsecaseService {
         { stage: "two_factor", reason: "code_reused", email: user.email, user, attempt },
         context
       )
+
       throw new UnprocessableEntityException("That code has already been used; wait for the next one")
     }
   }

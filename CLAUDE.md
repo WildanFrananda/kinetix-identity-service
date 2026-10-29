@@ -276,6 +276,51 @@ password is checked first, so a wrong password never tests the code. With an adm
 enable do not ask again: the password was given at most ten minutes earlier to obtain it. `2fa/setup` is limited to five a
 minute per address like the others.
 
+## A passkey answers the challenge beside the code
+
+Passkeys (WebAuthn, `@simplewebauthn/server`, a runtime dependency that runs on Bun) are the backoffice's alternative
+answer to the two-factor challenge: infra `docs/PASSKEYS.md` and the user's rulings of 2026-10-29. Sign-in stays email
+and password; the challenge is then answered by `2fa/verify` with the code or by `2fa/passkey/options` +
+`2fa/passkey/verify`, and the login answer says `passkeys: true|false`. A passkey is enrolled only while the code is on
+(409 `TWO_FACTOR_REQUIRED`), so the code is always there to fall back on (the WireGuard face, a browser without WebAuthn).
+Turning the code off leaves the passkeys unusable, not deleted: no challenge is issued without it.
+
+`IDENTITY_WEBAUTHN_RP_ID`, `IDENTITY_WEBAUTHN_ORIGIN` and `IDENTITY_WEBAUTHN_RP_NAME` are read at start
+(`relyingPartyFrom`). An IP address as the relying party is refused, because WebAuthn refuses one; so is an origin that
+is not one lower-case `http(s)://host[:port]`, or whose host is neither the relying party nor under it. Production's
+relying party is the onion host over plain `http` (Tor Browser treats `.onion` as secure), so a new onion address means
+enrolling again.
+
+The ceremony asks for attestation `none` (identity proves who holds the key, not which make of authenticator it is),
+user verification required in the options and again when verifying, ES256 and RS256 only, a resident key preferred.
+The user handle is the account's principal id: opaque, stable, and never the email.
+
+Every options call writes a `passkey_challenges` row, spent once by a conditional `UPDATE` of `usedAt` and judged by the
+database's `now()`: a registration's lives 300 s under its `challengeId`; a sign-in's lives 120 s under the two-factor
+challenge's `jti`, unique, so a new options call replaces it. `ExpiredRecordSweeperService` deletes them past expiry. A
+verify spends the open options whatever the outcome, so a refused client asks for new ones.
+
+`2fa/passkey/verify` shares `openChallenge` and `admitAnswer` with `2fa/verify`: the spent check, the challenge's five
+attempts, the account's counter, then the challenge `jti` written to `revoked_access_tokens` and `startSession`. Every
+refusal before that is 401 `PASSKEY_REFUSED` and leaves the challenge open, which is what the edge keeps a pending
+sign-in on; it is logged as `sign_in_failure` with stage `passkey`, a reason (`unknown_passkey`, `passkey_refused`,
+`no_passkey_challenge`, `sign_count_regressed`) and `detail`, the library's own message (it names origins and spent
+challenges, never a key or a signature), and counted on `kinetix_identity_sign_in_failures_total{stage="passkey"}`. The
+library refuses a signature counter that did not move forward (both at zero is allowed: synced passkeys always report
+zero). The stored counter then moves by a conditional `UPDATE` after the challenge is consumed; a sign-in that moved it
+first leaves this one 401 `CHALLENGE_SPENT`, as a reused code does.
+
+Adding and removing need the password, checked as `2fa/disable` checks it, and end no other session: they add or remove
+an alternative, and the code was needed to sign in either way. At most ten passkeys: the limit is checked at options,
+so an authenticator never makes a credential identity would then refuse, and again when adding, under a lock on the
+account's `users` row, so simultaneous additions cannot pass ten. The four management routes are `@AdminAudit`ed
+(`identity.passkeys_list`, `passkey_options`, `passkey_add`, `passkey_remove`); the 2FA routes are not. The columns are
+camelCase like every other table's.
+
+The specs never mock the library's verification: `test/support/software_authenticator.ts` builds real `none`
+attestations and ES256 or RS256 assertions with `node:crypto`. `passkey_store.spec.ts` needs Postgres and runs in the
+`migrations` job.
+
 ## A cleared value is written as NULL
 
 TypeORM's `save` skips a property that is `undefined`. The adapters therefore write `?? null` for every nullable
