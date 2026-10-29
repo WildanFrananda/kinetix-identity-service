@@ -311,9 +311,17 @@ zero). The stored counter then moves by a conditional `UPDATE` after the challen
 first leaves this one 401 `CHALLENGE_SPENT`, as a reused code does.
 
 Adding and removing need the password, checked as `2fa/disable` checks it, and end no other session: they add or remove
-an alternative, and the code was needed to sign in either way. At most ten passkeys: the limit is checked at options,
-so an authenticator never makes a credential identity would then refuse, and again when adding, under a lock on the
-account's `users` row, so simultaneous additions cannot pass ten. The four management routes are `@AdminAudit`ed
+an alternative, and the code was needed to sign in either way. Adding checks it at the creation options, not when the
+credential comes back (2026-10-29): the user typed a wrong password, the browser had already made the passkey and saved
+it in Google Password Manager, and identity then refused it, leaving a passkey the server never knew. The options are
+now given only after the password, and the registration that spends them takes none. A registration whose answer does
+not verify is logged as `passkey_registration_refused` with the library's `detail`; it is not a sign-in failure, so it
+is not counted on `kinetix_identity_sign_in_failures_total`. The list carries each passkey's `credentialId` (public: it
+goes out in every `allowCredentials`), so the backoffice can tell the browser which passkeys the account still has
+(WebAuthn's signal API) and a removed or refused one leaves the password manager too.
+
+At most ten passkeys: the limit is checked at options, so an authenticator never makes a credential identity would then
+refuse, and again when adding, under a lock on the account's `users` row, so simultaneous additions cannot pass ten. The four management routes are `@AdminAudit`ed
 (`identity.passkeys_list`, `passkey_options`, `passkey_add`, `passkey_remove`); the 2FA routes are not. The columns are
 camelCase like every other table's.
 

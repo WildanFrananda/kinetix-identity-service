@@ -30,7 +30,7 @@ const ORIGIN = LAB_RELYING_PARTY.origin
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u
 
-const VIEW_KEYS = ["backedUp", "createdAt", "deviceType", "id", "lastUsedAt", "name"]
+const VIEW_KEYS = ["backedUp", "createdAt", "credentialId", "deviceType", "id", "lastUsedAt", "name"]
 
 type LoggedEvent = { message: string; requestId?: string | null; fields?: Record<string, unknown> }
 
@@ -76,8 +76,19 @@ describe("passkeys", () => {
     return pair.accessToken
   }
 
-  async function creationOptions(user: UserEntity, token: string): Promise<LightMyRequestResponse> {
-    return await send({ method: "POST", url: `/api/v1/auth/passkeys/${user.id}/options`, headers: bearer(token) })
+  async function creationOptions(
+    user: UserEntity,
+    token: string,
+    payload: Record<string, unknown> = { password: PASSWORD }
+  ): Promise<LightMyRequestResponse> {
+    harness.attempts.advance(120)
+
+    return await send({
+      method: "POST",
+      url: `/api/v1/auth/passkeys/${user.id}/options`,
+      headers: bearer(token),
+      payload
+    })
   }
 
   async function register(
@@ -102,7 +113,6 @@ describe("passkeys", () => {
     return await register(user, token, {
       challengeId: options.json().challengeId,
       name,
-      password: PASSWORD,
       credential: authenticator.register(options.json().options, ORIGIN)
     })
   }
@@ -309,7 +319,6 @@ describe("passkeys", () => {
       const registration = await register(plain, token, {
         challengeId: "00000000-0000-4000-8000-000000000000",
         name: "Phone",
-        password: PASSWORD,
         credential: {}
       })
 
@@ -319,38 +328,48 @@ describe("passkeys", () => {
       expect(registration.json().error).toBe("TWO_FACTOR_REQUIRED")
     })
 
-    it("refuses a wrong password exactly as sign-in does, counts it, and leaves the challenge usable", async () => {
+    it("checks the password before any options, so no authenticator makes a passkey for a wrong one", async () => {
       const before = await failuresCounted("password", "admin")
-      const authenticator = new SoftwareAuthenticator()
       const token = await sessionOf(admin)
-      const options = await creationOptions(admin, token)
-      const payload = {
-        challengeId: options.json().challengeId,
-        name: "Phone",
-        credential: authenticator.register(options.json().options, ORIGIN)
-      }
 
-      const wrong = await register(admin, token, { ...payload, password: "not-the-password" })
-      const right = await register(admin, token, { ...payload, password: PASSWORD })
+      const wrong = await creationOptions(admin, token, { password: "not-the-password" })
 
       expect(wrong.statusCode).toBe(401)
       expect(wrong.json().message).toBe("Invalid email or password credentials")
+      expect(wrong.json().options).toBeUndefined()
       expect(await failuresCounted("password", "admin")).toBe(before + 1)
-      expect(right.statusCode).toBe(201)
+
+      const right = await creationOptions(admin, token)
+      const added = await register(admin, token, {
+        challengeId: right.json().challengeId,
+        name: "Phone",
+        credential: new SoftwareAuthenticator().register(right.json().options, ORIGIN)
+      })
+
+      expect(right.statusCode).toBe(200)
+      expect(added.statusCode).toBe(201)
     })
 
-    it("refuses a missing password with 400 before anything is counted", async () => {
+    it("refuses options without a password with 400 before anything is counted", async () => {
+      const response = await creationOptions(admin, await sessionOf(admin), {})
+
+      expect(response.statusCode).toBe(400)
+      expect(harness.attempts.accounts.get(accountKeyOf(admin.email))).toBeUndefined()
+    })
+
+    it("takes no password when adding: the options were given only after it", async () => {
       const token = await sessionOf(admin)
       const options = await creationOptions(admin, token)
 
       const response = await register(admin, token, {
         challengeId: options.json().challengeId,
         name: "Phone",
+        password: PASSWORD,
         credential: new SoftwareAuthenticator().register(options.json().options, ORIGIN)
       })
 
       expect(response.statusCode).toBe(400)
-      expect(harness.attempts.accounts.get(accountKeyOf(admin.email))).toBeUndefined()
+      expect(harness.passkeys.rows).toHaveLength(0)
     })
 
     it.each([
@@ -366,7 +385,6 @@ describe("passkeys", () => {
       const response = await register(admin, token, {
         challengeId: options.json().challengeId,
         name: "Phone",
-        password: PASSWORD,
         credential: new SoftwareAuthenticator().register(options.json().options, ORIGIN),
         ...change
       })
@@ -383,14 +401,12 @@ describe("passkeys", () => {
       const first = await register(admin, token, {
         challengeId,
         name: "First",
-        password: PASSWORD,
         credential: new SoftwareAuthenticator().register(options.json().options, ORIGIN)
       })
 
       const second = await register(admin, token, {
         challengeId,
         name: "Second",
-        password: PASSWORD,
         credential: new SoftwareAuthenticator().register(options.json().options, ORIGIN)
       })
 
@@ -408,7 +424,6 @@ describe("passkeys", () => {
       const response = await register(admin, token, {
         challengeId: options.json().challengeId,
         name: "Late",
-        password: PASSWORD,
         credential: new SoftwareAuthenticator().register(options.json().options, ORIGIN)
       })
 
@@ -422,7 +437,6 @@ describe("passkeys", () => {
       const response = await register(admin, await sessionOf(admin), {
         challengeId: options.json().challengeId,
         name: "Borrowed",
-        password: PASSWORD,
         credential: new SoftwareAuthenticator().register(options.json().options, ORIGIN)
       })
 
@@ -430,22 +444,28 @@ describe("passkeys", () => {
       expect(response.json().error).toBe("PASSKEY_CHALLENGE_INVALID")
     })
 
-    it("refuses a credential made for another origin with 400 PASSKEY_INVALID and counts it", async () => {
+    it("refuses a credential made for another origin with 400 PASSKEY_INVALID, logged but not a sign-in failure", async () => {
       const before = await failuresCounted("passkey", "admin")
+      const warn = jest.spyOn(Logger.prototype, "warn")
       const token = await sessionOf(admin)
       const options = await creationOptions(admin, token)
 
       const response = await register(admin, token, {
         challengeId: options.json().challengeId,
         name: "Phished",
-        password: PASSWORD,
         credential: new SoftwareAuthenticator().register(options.json().options, "https://backoffice.example")
       })
 
       expect(response.statusCode).toBe(400)
       expect(response.json().error).toBe("PASSKEY_INVALID")
-      expect(await failuresCounted("passkey", "admin")).toBe(before + 1)
+      expect(await failuresCounted("passkey", "admin")).toBe(before)
       expect(harness.passkeys.rows).toHaveLength(0)
+
+      const refused = warn.mock.calls
+        .map((call) => call[0] as LoggedEvent)
+        .find((event) => event.message === "passkey_registration_refused")
+      expect(refused?.fields?.user_id).toBe(ADMIN_ID)
+      expect(String(refused?.fields?.detail)).toContain("origin")
     })
 
     it("refuses an authenticator that did not verify its user", async () => {
@@ -463,7 +483,6 @@ describe("passkeys", () => {
       const response = await register(admin, token, {
         challengeId: options.json().challengeId,
         name: "Crossed",
-        password: PASSWORD,
         credential: new SoftwareAuthenticator().register(elsewhere.json().options, ORIGIN)
       })
 
@@ -481,7 +500,6 @@ describe("passkeys", () => {
       const late = await register(admin, token, {
         challengeId: pending.json().challengeId,
         name: "Eleventh",
-        password: PASSWORD,
         credential: new SoftwareAuthenticator().register(pending.json().options, ORIGIN)
       })
 

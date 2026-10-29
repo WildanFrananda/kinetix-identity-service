@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsObject, IsString, IsUUID, Matches, MaxLength } from "class-validator"
+import { IsObject, IsString, IsUUID, Matches, MaxLength } from "class-validator"
 import { LONGEST_PASSKEY_NAME } from "../../domain/passkey_policy"
 
 class PasskeyRegistrationInputDto {
@@ -9,11 +9,6 @@ class PasskeyRegistrationInputDto {
   @Matches(/\S/u, { message: "name must not be blank" })
   @MaxLength(LONGEST_PASSKEY_NAME)
   name!: string
-
-  @IsString()
-  @IsNotEmpty({ message: "password is required" })
-  @MaxLength(1024)
-  password!: string
 
   @IsObject({ message: "credential must be the object the browser's create() returned, as JSON" })
   credential!: Record<string, unknown>

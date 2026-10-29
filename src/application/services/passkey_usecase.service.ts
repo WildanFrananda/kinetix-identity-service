@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException
 } from "@nestjs/common"
@@ -34,6 +35,8 @@ import type { AccessClaims } from "../../types/token.type"
 
 @Injectable()
 class PasskeyUsecaseService {
+  private readonly logger = new Logger(PasskeyUsecaseService.name)
+
   constructor(
     @Inject("UserRepositoryPort")
     private readonly userRepository: UserRepositoryPort,
@@ -55,8 +58,14 @@ class PasskeyUsecaseService {
     return { passkeys: held.map(viewOf) }
   }
 
-  async registrationOptions(claims: AccessClaims, userId: number): Promise<PasskeyRegistrationOptions> {
+  async registrationOptions(
+    claims: AccessClaims,
+    userId: number,
+    password: string,
+    context: CallContext
+  ): Promise<PasskeyRegistrationOptions> {
     const user: UserEntity = await this.ownAccount(claims, userId)
+    await this.authUsecase.confirmPassword(user, password, context)
     requireTwoFactor(user)
 
     const held: PasskeyEntity[] = await this.passkeys.listForUser(user.id)
@@ -86,7 +95,6 @@ class PasskeyUsecaseService {
     context: CallContext
   ): Promise<PasskeyView> {
     const user: UserEntity = await this.ownAccount(claims, userId)
-    const attempt: AdmittedAttempt = await this.authUsecase.confirmPassword(user, dto.password, context)
     requireTwoFactor(user)
 
     const expectedChallenge: string | null = await this.challenges.spendRegistration(dto.challengeId, user.id)
@@ -99,17 +107,11 @@ class PasskeyUsecaseService {
 
     const verified = await this.ceremony.verifyRegistration(dto.credential, expectedChallenge)
     if (verified.outcome === "refused") {
-      this.signInAttempts.failed(
-        {
-          stage: "passkey",
-          reason: "passkey_refused",
-          email: user.email,
-          user,
-          attempt,
-          detail: verified.detail
-        },
-        context
-      )
+      this.logger.warn({
+        message: "passkey_registration_refused",
+        requestId: context.requestId,
+        fields: { event: "passkey_registration_refused", user_id: user.id, detail: verified.detail }
+      })
 
       throw new BadRequestException({
         error: "PASSKEY_INVALID",
@@ -257,6 +259,7 @@ function limitReached(): ConflictException {
 function viewOf(passkey: PasskeyEntity): PasskeyView {
   return {
     id: passkey.id,
+    credentialId: passkey.credentialId,
     name: passkey.name,
     createdAt: passkey.createdAt.toISOString(),
     lastUsedAt: passkey.lastUsedAt === null ? null : passkey.lastUsedAt.toISOString(),

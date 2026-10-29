@@ -47,9 +47,9 @@ App Check token in `X-Firebase-AppCheck` (`IDENTITY_CLIENTS`, `IDENTITY_UNNAMED_
 | `POST` | `/api/v1/auth/2fa/setup/:id` | Owner only, 5/min, per-account delay; takes the enrolment token | Issue a TOTP secret; body `password` with an access token |
 | `POST` | `/api/v1/auth/2fa/enable/:id` | Owner only, 5/min, per-account delay; takes the enrolment token | Turn two-factor on; body `code`, and `password` with an access token; ends every other session (with the enrolment token, every session) |
 | `POST` | `/api/v1/auth/2fa/disable/:id` | Owner only, 5/min, per-account delay | Turn two-factor off and forget the secret; body `code` and `password`; ends every other session (an admin's, every session) |
-| `GET` | `/api/v1/auth/passkeys/:id` | Owner only | The account's passkeys: name, dates, device type, backup state |
-| `POST` | `/api/v1/auth/passkeys/:id/options` | Owner only, 5/min | WebAuthn creation options and their `challengeId` (300 s); 409 `TWO_FACTOR_REQUIRED` without the code, 409 `PASSKEY_LIMIT` at ten |
-| `POST` | `/api/v1/auth/passkeys/:id` | Owner only, 5/min, per-account delay | Add a passkey; body `challengeId`, `name`, `password`, `credential`; 201 with the passkey; other sessions stay |
+| `GET` | `/api/v1/auth/passkeys/:id` | Owner only | The account's passkeys: credential id, name, dates, device type, backup state |
+| `POST` | `/api/v1/auth/passkeys/:id/options` | Owner only, 5/min, per-account delay | Body `password`, checked first; WebAuthn creation options and their `challengeId` (300 s); 409 `TWO_FACTOR_REQUIRED` without the code, 409 `PASSKEY_LIMIT` at ten |
+| `POST` | `/api/v1/auth/passkeys/:id` | Owner only, 5/min | Add a passkey; body `challengeId`, `name`, `credential`; 201 with the passkey; other sessions stay |
 | `DELETE` | `/api/v1/auth/passkeys/:id/:passkeyId` | Owner only, 5/min, per-account delay | Remove a passkey; body `password`; 204, 404 `PASSKEY_NOT_FOUND` |
 | `GET` | `/api/v1/users/:id/profile` | Self or admin | Read a profile |
 | `PUT` | `/api/v1/users/:id/profile` | Self or admin | Write a profile; a changed address is geocoded |
