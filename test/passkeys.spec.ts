@@ -13,8 +13,9 @@ import { codeAt } from "../src/infrastructure/crypto/totp"
 import { metricsRegistry } from "../src/infrastructure/observability/metrics_registry"
 import { GATEWAY_ADDRESS } from "./support/http_app"
 import { identityApp, principalOf } from "./support/identity_app"
-import { LAB_RELYING_PARTY } from "./support/lab_relying_party"
+import { LAB_RELYING_PARTY, ONION_RELYING_PARTY } from "./support/lab_relying_party"
 import SoftwareAuthenticator from "./support/software_authenticator"
+import type { RelyingParty } from "../src/types/relying_party.type"
 
 const PASSWORD = "passkey-fixture-password"
 
@@ -30,7 +31,9 @@ const ORIGIN = LAB_RELYING_PARTY.origin
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u
 
-const VIEW_KEYS = ["backedUp", "createdAt", "credentialId", "deviceType", "id", "lastUsedAt", "name"]
+const VIEW_KEYS = ["backedUp", "createdAt", "credentialId", "deviceType", "id", "lastUsedAt", "name", "rpId"]
+
+const UNKNOWN_ORIGIN = "https://backoffice.example"
 
 type LoggedEvent = { message: string; requestId?: string | null; fields?: Record<string, unknown> }
 
@@ -66,6 +69,10 @@ describe("passkeys", () => {
     return { authorization: `Bearer ${token}` }
   }
 
+  function facing(origin: string | null): Record<string, string> {
+    return origin === null ? {} : { "x-kinetix-origin": origin }
+  }
+
   async function sessionOf(user: UserEntity): Promise<string> {
     const pair = await harness.tokens.issuePair(
       { id: user.id, email: user.email, role: user.role },
@@ -79,14 +86,15 @@ describe("passkeys", () => {
   async function creationOptions(
     user: UserEntity,
     token: string,
-    payload: Record<string, unknown> = { password: PASSWORD }
+    payload: Record<string, unknown> = { password: PASSWORD },
+    origin: string | null = null
   ): Promise<LightMyRequestResponse> {
     harness.attempts.advance(120)
 
     return await send({
       method: "POST",
       url: `/api/v1/auth/passkeys/${user.id}/options`,
-      headers: bearer(token),
+      headers: { ...bearer(token), ...facing(origin) },
       payload
     })
   }
@@ -94,45 +102,63 @@ describe("passkeys", () => {
   async function register(
     user: UserEntity,
     token: string,
-    payload: Record<string, unknown>
+    payload: Record<string, unknown>,
+    origin: string | null = null
   ): Promise<LightMyRequestResponse> {
     harness.attempts.advance(120)
 
-    return await send({ method: "POST", url: `/api/v1/auth/passkeys/${user.id}`, headers: bearer(token), payload })
+    return await send({
+      method: "POST",
+      url: `/api/v1/auth/passkeys/${user.id}`,
+      headers: { ...bearer(token), ...facing(origin) },
+      payload
+    })
   }
 
   async function enrol(
     user: UserEntity,
     authenticator: SoftwareAuthenticator,
-    name: string = "Work laptop"
+    name: string = "Work laptop",
+    face: RelyingParty | null = null
   ): Promise<LightMyRequestResponse> {
     const token = await sessionOf(user)
-    const options = await creationOptions(user, token)
+    const origin = face === null ? null : face.origin
+    const options = await creationOptions(user, token, { password: PASSWORD }, origin)
     expect(options.statusCode).toBe(200)
 
-    return await register(user, token, {
-      challengeId: options.json().challengeId,
-      name,
-      credential: authenticator.register(options.json().options, ORIGIN)
-    })
+    return await register(
+      user,
+      token,
+      {
+        challengeId: options.json().challengeId,
+        name,
+        credential: authenticator.register(options.json().options, origin ?? ORIGIN)
+      },
+      origin
+    )
   }
 
-  async function list(user: UserEntity, token: string): Promise<LightMyRequestResponse> {
-    return await send({ method: "GET", url: `/api/v1/auth/passkeys/${user.id}`, headers: bearer(token) })
+  async function list(user: UserEntity, token: string, origin: string | null = null): Promise<LightMyRequestResponse> {
+    return await send({
+      method: "GET",
+      url: `/api/v1/auth/passkeys/${user.id}`,
+      headers: { ...bearer(token), ...facing(origin) }
+    })
   }
 
   async function remove(
     user: UserEntity,
     token: string,
     passkeyId: string,
-    payload: Record<string, unknown>
+    payload: Record<string, unknown>,
+    origin: string | null = null
   ): Promise<LightMyRequestResponse> {
     harness.attempts.advance(120)
 
     return await send({
       method: "DELETE",
       url: `/api/v1/auth/passkeys/${user.id}/${passkeyId}`,
-      headers: bearer(token),
+      headers: { ...bearer(token), ...facing(origin) },
       payload
     })
   }
@@ -177,17 +203,25 @@ describe("passkeys", () => {
     })
   }
 
-  async function signInOptions(challengeToken: string): Promise<PublicKeyCredentialRequestOptionsJSON> {
-    const response = await requestOptions(challengeToken)
+  async function signInOptions(
+    challengeToken: string,
+    origin: string | null = null
+  ): Promise<PublicKeyCredentialRequestOptionsJSON> {
+    const response = await requestOptions(challengeToken, facing(origin))
     expect(response.statusCode).toBe(200)
 
     return response.json().options
   }
 
-  async function signInWith(authenticator: SoftwareAuthenticator, challengeToken: string): Promise<LightMyRequestResponse> {
-    const options = await signInOptions(challengeToken)
+  async function signInWith(
+    authenticator: SoftwareAuthenticator,
+    challengeToken: string,
+    face: RelyingParty | null = null
+  ): Promise<LightMyRequestResponse> {
+    const origin = face === null ? null : face.origin
+    const options = await signInOptions(challengeToken, origin)
 
-    return await answer(challengeToken, authenticator.assert(options, ORIGIN))
+    return await answer(challengeToken, authenticator.assert(options, origin ?? ORIGIN), facing(origin))
   }
 
   async function answerWithCode(challengeToken: string): Promise<LightMyRequestResponse> {
@@ -200,11 +234,12 @@ describe("passkeys", () => {
     })
   }
 
-  async function seedPasskeys(user: UserEntity, count: number): Promise<void> {
+  async function seedPasskeys(user: UserEntity, count: number, rpId: string = LAB_RELYING_PARTY.id): Promise<void> {
     for (let seeded = 0; seeded < count; seeded++) {
       await harness.passkeys.add(
         {
           userId: user.id,
+          rpId,
           credentialId: randomBytes(16).toString("base64url"),
           publicKey: new Uint8Array(65),
           signCount: 0,
@@ -464,6 +499,7 @@ describe("passkeys", () => {
       const refused = warn.mock.calls
         .map((call) => call[0] as LoggedEvent)
         .find((event) => event.message === "passkey_registration_refused")
+
       expect(refused?.fields?.user_id).toBe(ADMIN_ID)
       expect(String(refused?.fields?.detail)).toContain("origin")
     })
@@ -936,6 +972,239 @@ describe("passkeys", () => {
 
       expect(response.statusCode).toBe(200)
       expect((jwt.decode(response.json().accessToken) as jwt.JwtPayload).azp).toBe("courier-app")
+    })
+  })
+
+  describe("on several faces", () => {
+    const LAB = LAB_RELYING_PARTY
+
+    const ONION = ONION_RELYING_PARTY
+
+    function idsOf(descriptors: { id: string }[] | undefined): string[] {
+      return (descriptors ?? []).map((descriptor) => descriptor.id)
+    }
+
+    it("asks for creation options for the face the request names, with that face's passkeys only", async () => {
+      const here = new SoftwareAuthenticator()
+      const there = new SoftwareAuthenticator()
+      await enrol(admin, here, "Lab", LAB)
+      await enrol(admin, there, "Onion", ONION)
+      const token = await sessionOf(admin)
+
+      const onion = await creationOptions(admin, token, { password: PASSWORD }, ONION.origin)
+      const lab = await creationOptions(admin, token, { password: PASSWORD }, LAB.origin)
+      const unnamed = await creationOptions(admin, token)
+
+      expect(onion.json().options.rp).toEqual({ id: ONION.id, name: "Kinetix Backoffice" })
+      expect(idsOf(onion.json().options.excludeCredentials)).toEqual([there.id])
+      expect(lab.json().options.rp.id).toBe(LAB.id)
+      expect(idsOf(lab.json().options.excludeCredentials)).toEqual([here.id])
+      expect(unnamed.json().options.rp.id).toBe(LAB.id)
+    })
+
+    it("records the relying party a passkey was made for, and lists every face's with its rpId", async () => {
+      const added = await enrol(admin, new SoftwareAuthenticator(), "Onion", ONION)
+      await enrol(admin, new SoftwareAuthenticator(), "Lab")
+
+      expect(added.statusCode).toBe(201)
+      expect(added.json().rpId).toBe(ONION.id)
+      expect(harness.passkeys.rows.map((row) => row.rpId)).toEqual([ONION.id, LAB.id])
+
+      for (const origin of [null, LAB.origin, ONION.origin]) {
+        const listed = await list(admin, await sessionOf(admin), origin)
+        const passkeys: { name: string; rpId: string }[] = listed.json().passkeys
+
+        expect(listed.statusCode).toBe(200)
+        expect(passkeys.map((passkey) => [passkey.name, passkey.rpId])).toEqual([
+          ["Onion", ONION.id],
+          ["Lab", LAB.id]
+        ])
+      }
+    })
+
+    it("refuses a registration answered on one face and sent from the other", async () => {
+      const token = await sessionOf(admin)
+      const options = await creationOptions(admin, token, { password: PASSWORD }, LAB.origin)
+
+      const crossed = await register(
+        admin,
+        token,
+        {
+          challengeId: options.json().challengeId,
+          name: "Crossed",
+          credential: new SoftwareAuthenticator().register(options.json().options, LAB.origin)
+        },
+        ONION.origin
+      )
+
+      expect(crossed.statusCode).toBe(400)
+      expect(crossed.json().error).toBe("PASSKEY_INVALID")
+      expect(harness.passkeys.rows).toHaveLength(0)
+    })
+
+    it("holds at most ten for the account, every face together", async () => {
+      await seedPasskeys(admin, 5, LAB.id)
+      await seedPasskeys(admin, 5, ONION.id)
+      const token = await sessionOf(admin)
+
+      const lab = await creationOptions(admin, token, { password: PASSWORD }, LAB.origin)
+      const onion = await creationOptions(admin, token, { password: PASSWORD }, ONION.origin)
+
+      expect([lab.statusCode, onion.statusCode]).toEqual([409, 409])
+      expect([lab.json().error, onion.json().error]).toEqual(["PASSKEY_LIMIT", "PASSKEY_LIMIT"])
+    })
+
+    it("tells the challenge whether the account holds a passkey made on the face it signs in on", async () => {
+      await enrol(admin, new SoftwareAuthenticator(), "Onion", ONION)
+
+      const onion = await login(admin, facing(ONION.origin))
+      const lab = await login(admin, facing(LAB.origin))
+      const unnamed = await login(admin)
+
+      expect(onion.json().passkeys).toBe(true)
+      expect(lab.json().passkeys).toBe(false)
+      expect(unnamed.json().passkeys).toBe(false)
+    })
+
+    it("signs in on an unknown face all the same, with the first face's flag", async () => {
+      await enrol(admin, new SoftwareAuthenticator(), "Lab", LAB)
+
+      const response = await login(admin, facing(UNKNOWN_ORIGIN))
+
+      expect(response.statusCode).toBe(200)
+      expect(response.json().mfaRequired).toBe(true)
+      expect(response.json().passkeys).toBe(true)
+    })
+
+    it("asks for request options with the face's relying party and its passkeys only", async () => {
+      const here = new SoftwareAuthenticator()
+      const there = new SoftwareAuthenticator()
+      await enrol(admin, here, "Lab", LAB)
+      await enrol(admin, there, "Onion", ONION)
+      const token = await challengeFor(admin)
+
+      const onion = await signInOptions(token, ONION.origin)
+      const lab = await signInOptions(token, LAB.origin)
+      const unnamed = await signInOptions(token)
+
+      expect(onion.rpId).toBe(ONION.id)
+      expect(idsOf(onion.allowCredentials)).toEqual([there.id])
+      expect(lab.rpId).toBe(LAB.id)
+      expect(idsOf(lab.allowCredentials)).toEqual([here.id])
+      expect(unnamed.rpId).toBe(LAB.id)
+    })
+
+    it("answers 409 NO_PASSKEYS on a face where the account made none", async () => {
+      await enrol(admin, new SoftwareAuthenticator(), "Lab", LAB)
+
+      const response = await requestOptions(await challengeFor(admin), facing(ONION.origin))
+
+      expect(response.statusCode).toBe(409)
+      expect(response.json().error).toBe("NO_PASSKEYS")
+    })
+
+    it("signs in with a passkey on its own face", async () => {
+      const authenticator = new SoftwareAuthenticator()
+      await enrol(admin, authenticator, "Onion", ONION)
+
+      const response = await signInWith(authenticator, await challengeFor(admin, facing(ONION.origin)), ONION)
+
+      expect(response.statusCode).toBe(200)
+      expect(response.json().refreshToken).toBeDefined()
+      expect(harness.passkeys.rows[0].signCount).toBe(1)
+    })
+
+    it("refuses on one face a passkey made on the other, and keeps the challenge open", async () => {
+      const here = new SoftwareAuthenticator()
+      const there = new SoftwareAuthenticator()
+      await enrol(admin, here, "Lab", LAB)
+      await enrol(admin, there, "Onion", ONION)
+      const log = jest.spyOn(Logger.prototype, "warn")
+      const token = await challengeFor(admin)
+
+      const onionOptions = await signInOptions(token, ONION.origin)
+      const foreign = await answer(token, here.assert(onionOptions, ONION.origin), facing(ONION.origin))
+
+      const labOptions = await signInOptions(token, LAB.origin)
+      const sentElsewhere = await answer(token, here.assert(labOptions, LAB.origin), facing(ONION.origin))
+
+      const onionAgain = await signInOptions(token, ONION.origin)
+      const wrongOrigin = await answer(token, there.assert(onionAgain, LAB.origin), facing(ONION.origin))
+
+      expect([foreign.statusCode, sentElsewhere.statusCode, wrongOrigin.statusCode]).toEqual([401, 401, 401])
+      expect([foreign.json().error, sentElsewhere.json().error, wrongOrigin.json().error]).toEqual([
+        "PASSKEY_REFUSED",
+        "PASSKEY_REFUSED",
+        "PASSKEY_REFUSED"
+      ])
+
+      expect(warnings(log).map((event) => event.fields?.reason)).toEqual([
+        "unknown_passkey",
+        "unknown_passkey",
+        "passkey_refused"
+      ])
+
+      const own = await signInWith(here, token, LAB)
+      expect(own.statusCode).toBe(200)
+    })
+
+    it("removes a passkey of another face, which the account still owns", async () => {
+      const added = await enrol(admin, new SoftwareAuthenticator(), "Onion", ONION)
+
+      const token = await sessionOf(admin)
+
+      const response = await remove(admin, token, added.json().id, { password: PASSWORD }, LAB.origin)
+
+      expect(response.statusCode).toBe(204)
+      expect(harness.passkeys.rows).toHaveLength(0)
+    })
+
+    it("refuses an unknown origin with 400 ORIGIN_UNKNOWN on every passkey route before anything is read", async () => {
+      const authenticator = new SoftwareAuthenticator()
+      const added = await enrol(admin, authenticator, "Lab", LAB)
+      const challenge = await challengeFor(admin)
+      const token = await sessionOf(admin)
+      const log = jest.spyOn(Logger.prototype, "warn")
+      const unknown = facing(UNKNOWN_ORIGIN)
+      const issuedBefore = harness.passkeyChallenges.rows.size
+      const countedBefore = harness.attempts.accounts.get(accountKeyOf(admin.email))?.attempts
+
+      const responses = [
+        await creationOptions(admin, token, { password: "not-the-password" }, UNKNOWN_ORIGIN),
+        await register(
+          admin,
+          token,
+          { challengeId: "00000000-0000-4000-8000-000000000000", name: "Phone", credential: {} },
+          UNKNOWN_ORIGIN
+        ),
+        await list(admin, token, UNKNOWN_ORIGIN),
+        await remove(admin, token, added.json().id, { password: "not-the-password" }, UNKNOWN_ORIGIN),
+        await requestOptions(challenge, unknown),
+        await answer(challenge, authenticator.assert({ challenge: "x", rpId: LAB.id }, LAB.origin), unknown)
+      ]
+
+      expect(responses.map((response) => response.statusCode)).toEqual([400, 400, 400, 400, 400, 400])
+      expect(responses.every((response) => response.json().error === "ORIGIN_UNKNOWN")).toBe(true)
+      expect(harness.passkeys.rows).toHaveLength(1)
+      expect(harness.passkeyChallenges.rows.size).toBe(issuedBefore)
+      expect(harness.attempts.accounts.get(accountKeyOf(admin.email))?.attempts).toBe(countedBefore)
+      expect(harness.attempts.challenges.get(jtiOf(challenge))).toBeUndefined()
+
+      const logged = log.mock.calls
+        .map((call) => call[0] as LoggedEvent)
+        .filter((event) => event.message === "face_origin_unknown")
+
+      expect(logged.map((event) => event.fields?.stage)).toEqual([
+        "passkey_options",
+        "passkey_add",
+        "passkeys_list",
+        "passkey_remove",
+        "passkey_sign_in_options",
+        "passkey_sign_in"
+      ])
+
+      expect(JSON.stringify(logged)).not.toContain(UNKNOWN_ORIGIN)
+      expect((await signInWith(authenticator, challenge, LAB)).statusCode).toBe(200)
     })
   })
 })

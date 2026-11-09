@@ -15,6 +15,7 @@ import type { CurrentUserView } from "../../types/auth.type"
 import type { CallContext } from "../../types/call_context.type"
 import type { TwoFactorChallenge, TwoFactorEnrolment, TwoFactorSetup } from "../../types/two_factor.type"
 import { AcceptsEnrolment, CurrentSession, CurrentUser, Public } from "../decorators/auth.decorators"
+import { FaceOrigin } from "../decorators/face_origin.decorator"
 import ClientProofGuard from "../guards/client_proof.guard"
 import SelfOrStaffGuard, { OwnerParam } from "../guards/self_or_staff.guard"
 import { AccountIdParam } from "../decorators/account_id_param.decorator"
@@ -32,9 +33,10 @@ class AuthController {
   @UseGuards(ClientProofGuard)
   async login(
     @Body() dto: LoginInputDto,
+    @FaceOrigin() origin: string | null,
     @RequestContext() context: CallContext
   ): Promise<AuthTokenOutputDto | TwoFactorChallenge | TwoFactorEnrolment> {
-    return await this.authUsecase.login(dto, context)
+    return await this.authUsecase.login(dto, origin, context)
   }
 
   @Public()

@@ -19,6 +19,7 @@ import { RefreshTokenClient1789650000000 } from "./migrations/1789650000000-Refr
 import { CourierApplicationRejection1789660000000 } from "./migrations/1789660000000-CourierApplicationRejection"
 import { SellerApplicationRejectedAt1789670000000 } from "./migrations/1789670000000-SellerApplicationRejectedAt"
 import { Passkeys1789680000000 } from "./migrations/1789680000000-Passkeys"
+import { PasskeyRelyingParty1789690000000 } from "./migrations/1789690000000-PasskeyRelyingParty"
 
 import AccountSignInAttemptTypeormEntity from "./infrastructure/persistence/entities/account_sign_in_attempt_typeorm.entity"
 import CourierApplicationTypeormEntity from "./infrastructure/persistence/entities/courier_application_typeorm.entity"
@@ -78,7 +79,8 @@ export default new DataSource({
     RefreshTokenClient1789650000000,
     CourierApplicationRejection1789660000000,
     SellerApplicationRejectedAt1789670000000,
-    Passkeys1789680000000
+    Passkeys1789680000000,
+    PasskeyRelyingParty1789690000000
   ],
   synchronize: false
 })

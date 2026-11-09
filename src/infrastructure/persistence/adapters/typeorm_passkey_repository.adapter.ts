@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common"
 import { InjectRepository } from "@nestjs/typeorm"
-import { Repository } from "typeorm"
+import { IsNull, Not, Repository } from "typeorm"
 import PasskeyEntity from "../../../domain/entities/passkey.entity"
 import MissingReferenceError from "../../../domain/errors/missing_reference.error"
 import PasskeyRepositoryPort from "../../../domain/ports/passkey_repository.port"
@@ -16,13 +16,22 @@ class TypeormPasskeyRepositoryAdapter implements PasskeyRepositoryPort {
   ) {}
 
   async listForUser(userId: number): Promise<PasskeyEntity[]> {
-    const records = await this.repo.find({ where: { userId }, order: { createdAt: "ASC", id: "ASC" } })
+    const records = await this.repo.find({
+      where: { userId, rpId: Not(IsNull()) },
+      order: { createdAt: "ASC", id: "ASC" }
+    })
 
     return records.map(passkeyOf)
   }
 
-  async existsForUser(userId: number): Promise<boolean> {
-    return await this.repo.exists({ where: { userId } })
+  async listForRelyingParty(userId: number, rpId: string): Promise<PasskeyEntity[]> {
+    const records = await this.repo.find({ where: { userId, rpId }, order: { createdAt: "ASC", id: "ASC" } })
+
+    return records.map(passkeyOf)
+  }
+
+  async existsForRelyingParty(userId: number, rpId: string): Promise<boolean> {
+    return await this.repo.exists({ where: { userId, rpId } })
   }
 
   async add(passkey: NewPasskey, limit: number): Promise<PasskeyAddition> {
@@ -43,12 +52,13 @@ class TypeormPasskeyRepositoryAdapter implements PasskeyRepositoryPort {
 
       const inserted: { id: string }[] = await manager.query(
         `INSERT INTO "passkeys"
-           ("userId", "credentialId", "publicKey", "signCount", "transports", "deviceType", "backedUp", "name")
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           ("userId", "rpId", "credentialId", "publicKey", "signCount", "transports", "deviceType", "backedUp", "name")
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT ("credentialId") DO NOTHING
          RETURNING "id"`,
         [
           passkey.userId,
+          passkey.rpId,
           passkey.credentialId,
           Buffer.from(passkey.publicKey),
           passkey.signCount,
@@ -87,12 +97,23 @@ class TypeormPasskeyRepositoryAdapter implements PasskeyRepositoryPort {
 
     return result.affected === 1
   }
+
+  async claimUnrecorded(rpId: string): Promise<number> {
+    const result = await this.repo.update({ rpId: IsNull() }, { rpId })
+
+    return result.affected ?? 0
+  }
 }
 
 function passkeyOf(record: PasskeyTypeormEntity): PasskeyEntity {
+  if (record.rpId === null) {
+    throw new Error(`passkey ${record.id} records no relying party; identity claims those when it starts`)
+  }
+
   return new PasskeyEntity(
     record.id,
     record.userId,
+    record.rpId,
     record.credentialId,
     new Uint8Array(record.publicKey),
     Number(record.signCount),

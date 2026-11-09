@@ -14,6 +14,7 @@ import PasskeyCeremonyPort from "../../domain/ports/passkey_ceremony.port"
 import PasskeyChallengeRepositoryPort from "../../domain/ports/passkey_challenge_repository.port"
 import PasskeyRepositoryPort from "../../domain/ports/passkey_repository.port"
 import UserRepositoryPort from "../../domain/ports/user_repository.port"
+import RelyingParties from "../../domain/relying_parties"
 import {
   PASSKEYS_PER_ACCOUNT,
   REGISTRATION_CHALLENGE_SECONDS,
@@ -30,6 +31,7 @@ import type { PasskeyList } from "../../types/passkey_list.type"
 import type { PasskeyRegistrationOptions } from "../../types/passkey_registration_options.type"
 import type { PasskeySignInOptions } from "../../types/passkey_sign_in_options.type"
 import type { PasskeyView } from "../../types/passkey_view.type"
+import type { RelyingParty } from "../../types/relying_party.type"
 import type { AdmittedAttempt, SignInFailureReason } from "../../types/sign_in_attempt.type"
 import type { AccessClaims } from "../../types/token.type"
 
@@ -46,12 +48,20 @@ class PasskeyUsecaseService {
     private readonly challenges: PasskeyChallengeRepositoryPort,
     @Inject("PasskeyCeremonyPort")
     private readonly ceremony: PasskeyCeremonyPort,
+    private readonly relyingParties: RelyingParties,
     private readonly authUsecase: AuthUsecaseService,
     private readonly tokenService: TokenService,
     private readonly signInAttempts: SignInAttemptsService
   ) {}
 
-  async list(claims: AccessClaims, userId: number): Promise<PasskeyList> {
+  async list(
+    claims: AccessClaims,
+    userId: number,
+    origin: string | null,
+    context: CallContext
+  ): Promise<PasskeyList> {
+    this.partyFacing(origin, "passkeys_list", context)
+
     const user: UserEntity = await this.ownAccount(claims, userId)
     const held: PasskeyEntity[] = await this.passkeys.listForUser(user.id)
 
@@ -62,8 +72,10 @@ class PasskeyUsecaseService {
     claims: AccessClaims,
     userId: number,
     password: string,
+    origin: string | null,
     context: CallContext
   ): Promise<PasskeyRegistrationOptions> {
+    const party: RelyingParty = this.partyFacing(origin, "passkey_options", context)
     const user: UserEntity = await this.ownAccount(claims, userId)
     await this.authUsecase.confirmPassword(user, password, context)
     requireTwoFactor(user)
@@ -74,8 +86,11 @@ class PasskeyUsecaseService {
     }
 
     const options = await this.ceremony.registrationOptions(
+      party,
       { userHandle: claims.sub, userName: user.email },
-      held,
+      held.filter(function (passkey: PasskeyEntity): boolean {
+        return passkey.rpId === party.id
+      }),
       REGISTRATION_CHALLENGE_SECONDS
     )
 
@@ -92,8 +107,10 @@ class PasskeyUsecaseService {
     claims: AccessClaims,
     userId: number,
     dto: PasskeyRegistrationInputDto,
+    origin: string | null,
     context: CallContext
   ): Promise<PasskeyView> {
+    const party: RelyingParty = this.partyFacing(origin, "passkey_add", context)
     const user: UserEntity = await this.ownAccount(claims, userId)
     requireTwoFactor(user)
 
@@ -105,7 +122,7 @@ class PasskeyUsecaseService {
       })
     }
 
-    const verified = await this.ceremony.verifyRegistration(dto.credential, expectedChallenge)
+    const verified = await this.ceremony.verifyRegistration(party, dto.credential, expectedChallenge)
     if (verified.outcome === "refused") {
       this.logger.warn({
         message: "passkey_registration_refused",
@@ -120,7 +137,7 @@ class PasskeyUsecaseService {
     }
 
     const added = await this.passkeys.add(
-      { ...verified.credential, userId: user.id, name: dto.name.trim() },
+      { ...verified.credential, userId: user.id, rpId: party.id, name: dto.name.trim() },
       PASSKEYS_PER_ACCOUNT
     )
     if (added.outcome === "limit") {
@@ -139,8 +156,11 @@ class PasskeyUsecaseService {
     userId: number,
     passkeyId: string,
     dto: PasskeyRemovalInputDto,
+    origin: string | null,
     context: CallContext
   ): Promise<void> {
+    this.partyFacing(origin, "passkey_remove", context)
+
     const user: UserEntity = await this.ownAccount(claims, userId)
     await this.authUsecase.confirmPassword(user, dto.password, context)
 
@@ -150,18 +170,23 @@ class PasskeyUsecaseService {
     }
   }
 
-  async signInOptions(challengeToken: string): Promise<PasskeySignInOptions> {
+  async signInOptions(
+    challengeToken: string,
+    origin: string | null,
+    context: CallContext
+  ): Promise<PasskeySignInOptions> {
+    const party: RelyingParty = this.partyFacing(origin, "passkey_sign_in_options", context)
     const { claims, user } = await this.authUsecase.openChallenge(challengeToken)
 
-    const held: PasskeyEntity[] = await this.passkeys.listForUser(user.id)
+    const held: PasskeyEntity[] = await this.passkeys.listForRelyingParty(user.id, party.id)
     if (held.length === 0) {
       throw new ConflictException({
         error: "NO_PASSKEYS",
-        message: "This account has no passkey; answer the challenge with the code."
+        message: "This account has no passkey made on this origin; answer the challenge with the code."
       })
     }
 
-    const options = await this.ceremony.signInOptions(held, SIGN_IN_CHALLENGE_SECONDS)
+    const options = await this.ceremony.signInOptions(party, held, SIGN_IN_CHALLENGE_SECONDS)
     await this.challenges.issueSignIn(user.id, claims.jti, options.challenge, SIGN_IN_CHALLENGE_SECONDS)
 
     return { options }
@@ -170,8 +195,10 @@ class PasskeyUsecaseService {
   async verifySignIn(
     challengeToken: string,
     credential: Record<string, unknown>,
+    origin: string | null,
     context: CallContext
   ): Promise<AuthTokenOutputDto> {
+    const party: RelyingParty = this.partyFacing(origin, "passkey_sign_in", context)
     const { claims, user } = await this.authUsecase.openChallenge(challengeToken)
     const attempt: AdmittedAttempt = await this.authUsecase.admitAnswer(user, claims)
 
@@ -186,9 +213,9 @@ class PasskeyUsecaseService {
       )
     }
 
-    const held: PasskeyEntity[] = await this.passkeys.listForUser(user.id)
+    const held: PasskeyEntity[] = await this.passkeys.listForRelyingParty(user.id, party.id)
 
-    const asserted = await this.ceremony.verifySignIn(credential, expectedChallenge, held)
+    const asserted = await this.ceremony.verifySignIn(party, credential, expectedChallenge, held)
     if (asserted.outcome === "refused") {
       throw this.refused(user, attempt, asserted.reason, asserted.detail, context)
     }
@@ -209,6 +236,24 @@ class PasskeyUsecaseService {
     }
 
     return await this.authUsecase.startSession(user, context)
+  }
+
+  private partyFacing(origin: string | null, stage: string, context: CallContext): RelyingParty {
+    const party: RelyingParty | null = this.relyingParties.facing(origin)
+    if (party === null) {
+      this.logger.warn({
+        message: "face_origin_unknown",
+        requestId: context.requestId,
+        fields: { event: "face_origin_unknown", stage }
+      })
+
+      throw new BadRequestException({
+        error: "ORIGIN_UNKNOWN",
+        message: "X-Kinetix-Origin names no origin this service's passkeys belong to."
+      })
+    }
+
+    return party
   }
 
   private async ownAccount(claims: AccessClaims, userId: number): Promise<UserEntity> {
@@ -260,6 +305,7 @@ function viewOf(passkey: PasskeyEntity): PasskeyView {
   return {
     id: passkey.id,
     credentialId: passkey.credentialId,
+    rpId: passkey.rpId,
     name: passkey.name,
     createdAt: passkey.createdAt.toISOString(),
     lastUsedAt: passkey.lastUsedAt === null ? null : passkey.lastUsedAt.toISOString(),

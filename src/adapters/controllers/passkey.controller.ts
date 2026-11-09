@@ -27,6 +27,7 @@ import type { AccessClaims } from "../../types/token.type"
 import { AccountIdParam } from "../decorators/account_id_param.decorator"
 import { AdminAudit } from "../decorators/admin_audit.decorator"
 import { CurrentUser, Public } from "../decorators/auth.decorators"
+import { FaceOrigin } from "../decorators/face_origin.decorator"
 import { RequestContext } from "../decorators/request_context.decorator"
 import ClientProofGuard from "../guards/client_proof.guard"
 import SelfOrStaffGuard, { OwnerParam } from "../guards/self_or_staff.guard"
@@ -41,8 +42,12 @@ class PasskeyController {
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @UseGuards(ClientProofGuard)
-  async signInOptions(@Body() dto: PasskeyOptionsInputDto): Promise<PasskeySignInOptions> {
-    return await this.passkeyUsecase.signInOptions(dto.challengeToken)
+  async signInOptions(
+    @Body() dto: PasskeyOptionsInputDto,
+    @FaceOrigin() origin: string | null,
+    @RequestContext() context: CallContext
+  ): Promise<PasskeySignInOptions> {
+    return await this.passkeyUsecase.signInOptions(dto.challengeToken, origin, context)
   }
 
   @Public()
@@ -52,9 +57,10 @@ class PasskeyController {
   @UseGuards(ClientProofGuard)
   async verifySignIn(
     @Body() dto: PasskeyVerifyInputDto,
+    @FaceOrigin() origin: string | null,
     @RequestContext() context: CallContext
   ): Promise<AuthTokenOutputDto> {
-    return await this.passkeyUsecase.verifySignIn(dto.challengeToken, dto.credential, context)
+    return await this.passkeyUsecase.verifySignIn(dto.challengeToken, dto.credential, origin, context)
   }
 
   @Get("passkeys/:id")
@@ -62,8 +68,13 @@ class PasskeyController {
   @UseGuards(SelfOrStaffGuard)
   @OwnerParam("id")
   @AdminAudit("identity.passkeys_list", "id")
-  async list(@CurrentUser() claims: AccessClaims, @AccountIdParam("id") userId: number): Promise<PasskeyList> {
-    return await this.passkeyUsecase.list(claims, userId)
+  async list(
+    @CurrentUser() claims: AccessClaims,
+    @AccountIdParam("id") userId: number,
+    @FaceOrigin() origin: string | null,
+    @RequestContext() context: CallContext
+  ): Promise<PasskeyList> {
+    return await this.passkeyUsecase.list(claims, userId, origin, context)
   }
 
   @Post("passkeys/:id/options")
@@ -76,9 +87,10 @@ class PasskeyController {
     @CurrentUser() claims: AccessClaims,
     @AccountIdParam("id") userId: number,
     @Body() dto: PasskeyRegistrationOptionsInputDto,
+    @FaceOrigin() origin: string | null,
     @RequestContext() context: CallContext
   ): Promise<PasskeyRegistrationOptions> {
-    return await this.passkeyUsecase.registrationOptions(claims, userId, dto.password, context)
+    return await this.passkeyUsecase.registrationOptions(claims, userId, dto.password, origin, context)
   }
 
   @Post("passkeys/:id")
@@ -91,9 +103,10 @@ class PasskeyController {
     @CurrentUser() claims: AccessClaims,
     @AccountIdParam("id") userId: number,
     @Body() dto: PasskeyRegistrationInputDto,
+    @FaceOrigin() origin: string | null,
     @RequestContext() context: CallContext
   ): Promise<PasskeyView> {
-    return await this.passkeyUsecase.register(claims, userId, dto, context)
+    return await this.passkeyUsecase.register(claims, userId, dto, origin, context)
   }
 
   @Delete("passkeys/:id/:passkeyId")
@@ -107,9 +120,10 @@ class PasskeyController {
     @AccountIdParam("id") userId: number,
     @Param("passkeyId", new ParseUUIDPipe()) passkeyId: string,
     @Body() dto: PasskeyRemovalInputDto,
+    @FaceOrigin() origin: string | null,
     @RequestContext() context: CallContext
   ): Promise<void> {
-    await this.passkeyUsecase.remove(claims, userId, passkeyId, dto, context)
+    await this.passkeyUsecase.remove(claims, userId, passkeyId, dto, origin, context)
   }
 }
 

@@ -12,6 +12,10 @@ const connectionString = process.env.KINETIX_TEST_POSTGRES
 
 const describeWithDatabase = connectionString ? describe : describe.skip
 
+const LAB = "backoffice.localhost"
+
+const ONION = "kinetixbackofficeexampleonionaddressabcdefghijklmnopqrstu.onion"
+
 describeWithDatabase("passkeys against a real database", () => {
   let dataSource: DataSource
   let passkeys: TypeormPasskeyRepositoryAdapter
@@ -49,6 +53,7 @@ describeWithDatabase("passkeys against a real database", () => {
   function aPasskey(userId: number, overrides: Partial<NewPasskey> = {}): NewPasskey {
     return {
       userId,
+      rpId: LAB,
       credentialId: randomBytes(32).toString("base64url"),
       publicKey: new Uint8Array(randomBytes(77)),
       signCount: 0,
@@ -81,7 +86,8 @@ describeWithDatabase("passkeys against a real database", () => {
       expect(listed[0].transports).toEqual(["internal", "hybrid"])
       expect(listed[0].signCount).toBe(4294967295)
       expect(listed[0].lastUsedAt).toBeNull()
-      expect(await passkeys.existsForUser(userId)).toBe(true)
+      expect(listed[0].rpId).toBe(LAB)
+      expect(await passkeys.existsForRelyingParty(userId, LAB)).toBe(true)
     })
 
     it("let no more than ten of twenty simultaneous additions through", async () => {
@@ -106,7 +112,7 @@ describeWithDatabase("passkeys against a real database", () => {
 
       expect(original.outcome).toBe("added")
       expect(copy.outcome).toBe("duplicate")
-      expect(await passkeys.existsForUser(second)).toBe(false)
+      expect(await passkeys.listForUser(second)).toHaveLength(0)
     })
 
     it("are removed only by their own account", async () => {
@@ -173,8 +179,59 @@ describeWithDatabase("passkeys against a real database", () => {
 
       await dataSource.query(`DELETE FROM "users" WHERE "id" = $1`, [userId])
 
-      expect(await passkeys.existsForUser(userId)).toBe(false)
+      expect(await passkeys.listForUser(userId)).toHaveLength(0)
       expect(await dataSource.query(`SELECT 1 FROM "passkey_challenges"`)).toHaveLength(0)
+    })
+
+    it("belong to the relying party they were made for", async () => {
+      const userId = await anAccount("faces")
+      await passkeys.add(aPasskey(userId, { rpId: LAB, name: "Lab" }), PASSKEYS_PER_ACCOUNT)
+      await passkeys.add(aPasskey(userId, { rpId: ONION, name: "Onion" }), PASSKEYS_PER_ACCOUNT)
+      const elsewhere = await anAccount("elsewhere")
+      await passkeys.add(aPasskey(elsewhere, { rpId: ONION }), PASSKEYS_PER_ACCOUNT)
+
+      const onion = await passkeys.listForRelyingParty(userId, ONION)
+
+      expect(onion.map((passkey) => [passkey.name, passkey.rpId])).toEqual([["Onion", ONION]])
+      expect((await passkeys.listForRelyingParty(userId, LAB)).map((passkey) => passkey.name)).toEqual(["Lab"])
+      expect((await passkeys.listForUser(userId)).map((passkey) => passkey.rpId)).toEqual([LAB, ONION])
+      expect(await passkeys.existsForRelyingParty(userId, ONION)).toBe(true)
+      expect(await passkeys.existsForRelyingParty(userId, "backoffice.kinetix.internal")).toBe(false)
+    })
+
+    it("count every relying party together against the limit", async () => {
+      const userId = await anAccount("limited")
+
+      const outcomes = await Promise.all(
+        Array.from({ length: 20 }, (_unused, index) =>
+          passkeys.add(aPasskey(userId, { rpId: index % 2 === 0 ? LAB : ONION }), PASSKEYS_PER_ACCOUNT)
+        )
+      )
+
+      expect(outcomes.filter((outcome) => outcome.outcome === "added")).toHaveLength(10)
+      expect(await passkeys.listForUser(userId)).toHaveLength(10)
+    })
+
+    it("made before relying parties were recorded are claimed for one, once, and hidden until then", async () => {
+      const userId = await anAccount("claimed")
+      await passkeys.add(aPasskey(userId, { rpId: ONION, name: "Recorded" }), PASSKEYS_PER_ACCOUNT)
+      await dataSource.query(
+        `INSERT INTO "passkeys"
+           ("userId", "credentialId", "publicKey", "signCount", "transports", "deviceType", "backedUp", "name")
+         VALUES ($1, $2, $3, 0, '{internal}', 'multiDevice', true, 'Before')`,
+        [userId, randomBytes(32).toString("base64url"), randomBytes(77)]
+      )
+
+      expect((await passkeys.listForUser(userId)).map((passkey) => passkey.name)).toEqual(["Recorded"])
+
+      expect(await passkeys.claimUnrecorded(LAB)).toBe(1)
+      expect(await passkeys.claimUnrecorded("backoffice.kinetix.internal")).toBe(0)
+
+      const listed = await passkeys.listForUser(userId)
+      expect(listed.map((passkey) => [passkey.name, passkey.rpId])).toEqual([
+        ["Recorded", ONION],
+        ["Before", LAB]
+      ])
     })
   })
 
@@ -183,7 +240,9 @@ describeWithDatabase("passkeys against a real database", () => {
       const userId = await anAccount("racer")
       const challengeId = await challenges.issueRegistration(userId, "registration-challenge", 300)
 
-      const spent = await Promise.all(Array.from({ length: 10 }, () => challenges.spendRegistration(challengeId, userId)))
+      const spent = await Promise.all(
+        Array.from({ length: 10 }, () => challenges.spendRegistration(challengeId, userId))
+      )
 
       expect(spent.filter((challenge) => challenge === "registration-challenge")).toHaveLength(1)
       expect(spent.filter((challenge) => challenge === null)).toHaveLength(9)

@@ -31,7 +31,7 @@ import InMemoryPasskeyChallenges from "./in_memory_passkey_challenges"
 import InMemoryPasskeys from "./in_memory_passkeys"
 import InMemorySignInAttempts from "./in_memory_sign_in_attempts"
 import InMemoryUsers from "./in_memory_users"
-import { LAB_RELYING_PARTY } from "./lab_relying_party"
+import { labRelyingParties } from "./lab_relying_party"
 
 const PRINCIPAL_PREFIX = "00000000-0000-4000-8000-"
 
@@ -78,12 +78,14 @@ async function identityApp(gate: ClientGateService = labClientGate()) {
 
   const passkeys = new InMemoryPasskeys()
   const passkeyChallenges = new InMemoryPasskeyChallenges()
-  const auth = new AuthUsecaseService(users, tokens, principals as any, signInAttempts, gate, passkeys)
+  const relyingParties = labRelyingParties()
+  const auth = new AuthUsecaseService(users, tokens, principals as any, signInAttempts, gate, passkeys, relyingParties)
   const passkeyUsecase = new PasskeyUsecaseService(
     users,
     passkeys,
     passkeyChallenges,
-    new SimpleWebAuthnCeremonyAdapter(LAB_RELYING_PARTY),
+    new SimpleWebAuthnCeremonyAdapter(),
+    relyingParties,
     auth,
     tokens,
     signInAttempts
@@ -159,6 +161,7 @@ async function identityApp(gate: ClientGateService = labClientGate()) {
     attempts,
     passkeys,
     passkeyChallenges,
+    relyingParties,
     principals,
     sellers,
     couriers,
