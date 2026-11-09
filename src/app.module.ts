@@ -32,6 +32,7 @@ import CourierRegistrationUsecaseService from "./application/services/courier_re
 import SignInAttemptsService from "./application/services/sign_in_attempts.service"
 import ExpiredRecordSweeperService from "./application/services/expired_record_sweeper.service"
 import PasskeyUsecaseService from "./application/services/passkey_usecase.service"
+import PasskeyRelyingPartyClaimService from "./application/services/passkey_relying_party_claim.service"
 import FleetRegistryGrpcAdapter from "./infrastructure/mesh/fleet_registry_grpc.adapter"
 
 import AuthController from "./adapters/controllers/auth.controller"
@@ -60,6 +61,7 @@ import SelfOrStaffGuard from "./adapters/guards/self_or_staff.guard"
 import JwksController from "./adapters/controllers/jwks.controller"
 import { CLIENT_GATE_PROVIDER } from "./infrastructure/attestation/client_gate.provider"
 import { PASSKEY_CEREMONY_PROVIDER } from "./infrastructure/webauthn/passkey_ceremony.provider"
+import { RELYING_PARTIES_PROVIDER } from "./infrastructure/webauthn/relying_parties.provider"
 import { positiveIntegerSetting, requiredSetting } from "./infrastructure/config/required_setting"
 import { DEFAULT_THROTTLE } from "./infrastructure/http/throttle_policy"
 
@@ -136,6 +138,7 @@ const DATABASE_CONNECT_TIMEOUT_MS = 5000
     PrincipalResolverService,
     CLIENT_GATE_PROVIDER,
     PASSKEY_CEREMONY_PROVIDER,
+    RELYING_PARTIES_PROVIDER,
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard
@@ -144,6 +147,7 @@ const DATABASE_CONNECT_TIMEOUT_MS = 5000
     SelfOrStaffGuard,
     AuthUsecaseService,
     PasskeyUsecaseService,
+    PasskeyRelyingPartyClaimService,
     SignInAttemptsService,
     ExpiredRecordSweeperService,
     UserProfileUsecaseService,

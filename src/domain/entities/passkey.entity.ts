@@ -3,6 +3,7 @@ import type { PasskeyDeviceType } from "../../types/passkey_device_type.type"
 class PasskeyEntity {
   id: string
   userId: number
+  rpId: string
   credentialId: string
   publicKey: Uint8Array<ArrayBuffer>
   signCount: number
@@ -16,6 +17,7 @@ class PasskeyEntity {
   constructor(
     id: string,
     userId: number,
+    rpId: string,
     credentialId: string,
     publicKey: Uint8Array<ArrayBuffer>,
     signCount: number,
@@ -28,6 +30,7 @@ class PasskeyEntity {
   ) {
     this.id = id
     this.userId = userId
+    this.rpId = rpId
     this.credentialId = credentialId
     this.publicKey = publicKey
     this.signCount = signCount

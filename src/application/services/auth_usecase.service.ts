@@ -14,6 +14,7 @@ import { normalisedEmail } from "../../domain/email_address"
 import ClientMismatchError from "../../domain/errors/client_mismatch.error"
 import PasskeyRepositoryPort from "../../domain/ports/passkey_repository.port"
 import UserRepositoryPort from "../../domain/ports/user_repository.port"
+import RelyingParties from "../../domain/relying_parties"
 import { checkedClient, clientNameOf, sessionClientDecision } from "../../domain/session_client"
 import LoginInputDto from "../dto/login_input.dto"
 import RegisterUserInputDto from "../dto/register_user_input.dto"
@@ -30,6 +31,7 @@ import { acceptedStep, generateSecret, otpauthUrl } from "../../infrastructure/c
 import type { Credentials } from "../../types/auth.type"
 import type { CallContext } from "../../types/call_context.type"
 import type { OpenChallenge } from "../../types/open_challenge.type"
+import type { RelyingParty } from "../../types/relying_party.type"
 import type { AdmittedAttempt } from "../../types/sign_in_attempt.type"
 import type { AccessClaims, RotatedPair, SessionClaims } from "../../types/token.type"
 import type {
@@ -51,11 +53,13 @@ class AuthUsecaseService {
     private readonly signInAttempts: SignInAttemptsService,
     private readonly clientGate: ClientGateService,
     @Inject("PasskeyRepositoryPort")
-    private readonly passkeys: PasskeyRepositoryPort
+    private readonly passkeys: PasskeyRepositoryPort,
+    private readonly relyingParties: RelyingParties
   ) {}
 
   async login(
     dto: LoginInputDto,
+    origin: string | null,
     context: CallContext
   ): Promise<AuthTokenOutputDto | TwoFactorChallenge | TwoFactorEnrolment> {
     const user: UserEntity = await this.verifyPassword(dto, context)
@@ -67,7 +71,8 @@ class AuthUsecaseService {
         principalId
       )
 
-      const passkeys: boolean = await this.passkeys.existsForUser(user.id)
+      const party: RelyingParty = this.relyingParties.facing(origin) ?? this.relyingParties.first
+      const passkeys: boolean = await this.passkeys.existsForRelyingParty(user.id, party.id)
 
       return { mfaRequired: true, challengeToken: challenge.token, expiresIn: challenge.expiresIn, passkeys }
     }

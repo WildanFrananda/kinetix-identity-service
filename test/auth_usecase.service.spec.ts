@@ -11,6 +11,7 @@ import { codeAt } from "../src/infrastructure/crypto/totp"
 import type { CallContext } from "../src/types/call_context.type"
 import type { AccessClaims, SessionClaims } from "../src/types/token.type"
 import type { TwoFactorSetup } from "../src/types/two_factor.type"
+import { labRelyingParties } from "./support/lab_relying_party"
 
 const PRINCIPAL = "11111111-2222-3333-4444-555555555555"
 
@@ -86,7 +87,7 @@ describe("AuthUsecaseService Unit Tests", () => {
       bound: jest.fn()
     }
 
-    mockPasskeys = { existsForUser: jest.fn().mockResolvedValue(false) }
+    mockPasskeys = { existsForRelyingParty: jest.fn().mockResolvedValue(false) }
 
     service = new AuthUsecaseService(
       mockUserRepository,
@@ -94,7 +95,8 @@ describe("AuthUsecaseService Unit Tests", () => {
       mockPrincipalResolver,
       mockSignInAttempts,
       mockClientGate,
-      mockPasskeys
+      mockPasskeys,
+      labRelyingParties()
     )
   })
 
@@ -166,7 +168,7 @@ describe("AuthUsecaseService Unit Tests", () => {
     mockUserRepository.findByEmail.mockResolvedValue(user)
     jest.spyOn(require("bcrypt"), "compare").mockResolvedValue(true as never)
 
-    await service.login({ email: "seller@kinetix.com", password: "password123" }, CONTEXT)
+    await service.login({ email: "seller@kinetix.com", password: "password123" }, null, CONTEXT)
 
     expect(mockPrincipalResolver.syncKind).toHaveBeenCalledWith("11111111-2222-3333-4444-555555555555", "seller")
   })
@@ -174,9 +176,9 @@ describe("AuthUsecaseService Unit Tests", () => {
   it("should reject an unknown email without revealing that it is unknown", async () => {
     mockUserRepository.findByEmail.mockResolvedValue(null)
 
-    await expect(service.login({ email: "nobody@kinetix.com", password: "whatever" }, CONTEXT)).rejects.toThrow(
-      "Invalid email or password credentials"
-    )
+    await expect(
+      service.login({ email: "nobody@kinetix.com", password: "whatever" }, null, CONTEXT)
+    ).rejects.toThrow("Invalid email or password credentials")
   })
 
   describe("email addresses", () => {
@@ -195,7 +197,7 @@ describe("AuthUsecaseService Unit Tests", () => {
       mockUserRepository.findByEmail.mockResolvedValue(user)
       jest.spyOn(require("bcrypt"), "compare").mockResolvedValue(true as never)
 
-      await service.login({ email: "User@Kinetix.Com", password: "password123" }, CONTEXT)
+      await service.login({ email: "User@Kinetix.Com", password: "password123" }, null, CONTEXT)
 
       expect(mockUserRepository.findByEmail).toHaveBeenCalledWith("user@kinetix.com")
     })
@@ -340,7 +342,7 @@ describe("AuthUsecaseService Unit Tests", () => {
       mockUserRepository.findByEmail.mockResolvedValue(user)
       jest.spyOn(require("bcrypt"), "compare").mockResolvedValue(true as never)
 
-      const res: any = await service.login({ email: user.email, password: "password123" }, CONTEXT)
+      const res: any = await service.login({ email: user.email, password: "password123" }, null, CONTEXT)
 
       expect(res.mfaRequired).toBe(true)
       expect(res.challengeToken).toBeDefined()
@@ -352,13 +354,13 @@ describe("AuthUsecaseService Unit Tests", () => {
     it("says in the challenge whether the account holds a passkey", async () => {
       await enabledSecret()
       mockUserRepository.findByEmail.mockResolvedValue(user)
-      mockPasskeys.existsForUser.mockResolvedValue(true)
+      mockPasskeys.existsForRelyingParty.mockResolvedValue(true)
       jest.spyOn(require("bcrypt"), "compare").mockResolvedValue(true as never)
 
-      const res: any = await service.login({ email: user.email, password: "password123" }, CONTEXT)
+      const res: any = await service.login({ email: user.email, password: "password123" }, null, CONTEXT)
 
       expect(res.passkeys).toBe(true)
-      expect(mockPasskeys.existsForUser).toHaveBeenCalledWith(user.id)
+      expect(mockPasskeys.existsForRelyingParty).toHaveBeenCalledWith(user.id, "backoffice.localhost")
     })
 
     it("issues tokens only when the challenge is answered with a valid code", async () => {

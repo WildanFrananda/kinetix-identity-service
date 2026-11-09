@@ -27,6 +27,9 @@ class PasskeyTypeormEntity {
   @JoinColumn({ name: "userId", foreignKeyConstraintName: "FK_passkeys_user" })
   user?: UserTypeormEntity
 
+  @Column({ type: "varchar", length: 253, nullable: true })
+  rpId!: string | null
+
   @Column({ type: "text" })
   credentialId!: string
 

@@ -6,6 +6,7 @@ import InMemorySignInAttempts from "./support/in_memory_sign_in_attempts"
 import InMemoryUsers from "./support/in_memory_users"
 import { labClientGate, unnamedContext } from "./support/client_gates"
 import { tokenServiceWithFakes } from "./support/identity_app"
+import { labRelyingParties } from "./support/lab_relying_party"
 
 const PRINCIPAL = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 
@@ -28,7 +29,8 @@ describe("refreshing a session", () => {
       principals as any,
       new SignInAttemptsService(new InMemorySignInAttempts()),
       labClientGate(),
-      new InMemoryPasskeys()
+      new InMemoryPasskeys(),
+      labRelyingParties()
     )
 
     const pair = await tokens.issuePair({ id: 5, email: "customer@kinetix.test", role: "customer" }, PRINCIPAL, null)

@@ -13,8 +13,14 @@ class InMemoryPasskeys implements PasskeyRepositoryPort {
     })
   }
 
-  async existsForUser(userId: number): Promise<boolean> {
-    return (await this.listForUser(userId)).length > 0
+  async listForRelyingParty(userId: number, rpId: string): Promise<PasskeyEntity[]> {
+    return this.rows.filter(function (row: PasskeyEntity): boolean {
+      return row.userId === userId && row.rpId === rpId
+    })
+  }
+
+  async existsForRelyingParty(userId: number, rpId: string): Promise<boolean> {
+    return (await this.listForRelyingParty(userId, rpId)).length > 0
   }
 
   async add(passkey: NewPasskey, limit: number): Promise<PasskeyAddition> {
@@ -29,6 +35,7 @@ class InMemoryPasskeys implements PasskeyRepositoryPort {
     const added = new PasskeyEntity(
       randomUUID(),
       passkey.userId,
+      passkey.rpId,
       passkey.credentialId,
       passkey.publicKey,
       passkey.signCount,
@@ -72,6 +79,10 @@ class InMemoryPasskeys implements PasskeyRepositoryPort {
     row.lastUsedAt = new Date()
 
     return true
+  }
+
+  async claimUnrecorded(_rpId: string): Promise<number> {
+    return 0
   }
 }
 

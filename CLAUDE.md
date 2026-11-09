@@ -282,14 +282,12 @@ Passkeys (WebAuthn, `@simplewebauthn/server`, a runtime dependency that runs on 
 answer to the two-factor challenge: infra `docs/PASSKEYS.md` and the user's rulings of 2026-10-29. Sign-in stays email
 and password; the challenge is then answered by `2fa/verify` with the code or by `2fa/passkey/options` +
 `2fa/passkey/verify`, and the login answer says `passkeys: true|false`. A passkey is enrolled only while the code is on
-(409 `TWO_FACTOR_REQUIRED`), so the code is always there to fall back on (the WireGuard face, a browser without WebAuthn).
+(409 `TWO_FACTOR_REQUIRED`), so the code is always there to fall back on (a face where the account has no passkey, a
+browser without WebAuthn).
 Turning the code off leaves the passkeys unusable, not deleted: no challenge is issued without it.
 
-`IDENTITY_WEBAUTHN_RP_ID`, `IDENTITY_WEBAUTHN_ORIGIN` and `IDENTITY_WEBAUTHN_RP_NAME` are read at start
-(`relyingPartyFrom`). An IP address as the relying party is refused, because WebAuthn refuses one; so is an origin that
-is not one lower-case `http(s)://host[:port]`, or whose host is neither the relying party nor under it. Production's
-relying party is the onion host over plain `http` (Tor Browser treats `.onion` as secure), so a new onion address means
-enrolling again.
+The relying parties are read at start; "A passkey belongs to the face it was made on" below has the rules. A new onion
+address means enrolling again on it.
 
 The ceremony asks for attestation `none` (identity proves who holds the key, not which make of authenticator it is),
 user verification required in the options and again when verifying, ES256 and RS256 only, a resident key preferred.
@@ -328,6 +326,45 @@ camelCase like every other table's.
 The specs never mock the library's verification: `test/support/software_authenticator.ts` builds real `none`
 attestations and ES256 or RS256 assertions with `node:crypto`. `passkey_store.spec.ts` needs Postgres and runs in the
 `migrations` job.
+
+## A passkey belongs to the face it was made on
+
+The backoffice has several faces (infra `docs/BACKOFFICE-TUNNEL-NAME.md`, 2026-11-09): in production its onion service
+and `backoffice.kinetix.internal` over WireGuard, in the lab `backoffice.localhost` and a lab onion. WebAuthn ties a
+passkey to the host it was made on, so a passkey made on the onion never signs in over WireGuard, nor the reverse; each
+face is enrolled on its own. `IDENTITY_WEBAUTHN_ORIGINS` lists the faces (`relyingPartiesFrom`): each entry one
+lower-case `http(s)://host[:port]` origin whose host is its relying party, never an IP address (WebAuthn refuses one),
+each host once. A refused entry is named by its position, never by its value, so the onion address stays out of a crash
+log. Without the list, the single pair `IDENTITY_WEBAUTHN_RP_ID` + `IDENTITY_WEBAUTHN_ORIGIN` is read as it was (there
+the origin may be under the relying party). With the list, the list is the configuration. Infra keeps the pair beside it
+on purpose, so an image from before the list (v1.7.1) still starts on a hand rollback; the pair must then name the list's
+first entry (its origin exactly, its host as the relying party), or the service refuses to start, naming the variable
+that disagrees and never a value. `IDENTITY_WEBAUTHN_RP_NAME` is one name for every face.
+
+The edge names the face in `X-Kinetix-Origin`: the configured origin it matched the request's host to and checked
+`Origin` against, never a header the browser sent. Login, `2fa/passkey/options`, `2fa/passkey/verify` and the four
+`passkeys/:id` routes read it (`@FaceOrigin()`); without it they act for the first origin, as every caller did before
+(the courier app, any call through Kong). Each passkey records its relying party (`passkeys.rpId`). Sign-in options name
+the face's passkeys only, and the answer is verified against that face's origin and relying party alone; creation
+options carry the face's `rp.id` and exclude its passkeys; registration is verified against the face and records it;
+the login's `passkeys` flag counts the face's passkeys; 409 `NO_PASSKEYS` means none on this face. The list shows every
+face's passkeys with their `rpId`, so the backoffice can tell which were made elsewhere, and removal takes any of them.
+The limit of ten is per account, every face together. An origin not on the list is 400 `ORIGIN_UNKNOWN` on the passkey
+routes before anything is read or counted, logged as `face_origin_unknown` with the route's stage and without the
+value; login never refuses for it and answers the first origin's flag. The edge reads `ORIGIN_UNKNOWN` as its own
+misconfiguration (502), not the browser's.
+
+`rpId` is nullable for one release, on purpose. The passkeys made before relying parties were recorded belong to the face
+the single pair named, which is the list's first origin (production's onion, the lab's `backoffice.localhost`), but a
+migration cannot know it: the migrator container gets the database's settings only, and a migration whose result
+depended on the environment would not be reproducible. `PasskeyRelyingParty1789690000000` adds the column empty, and
+`PasskeyRelyingPartyClaimService` gives every row without one the first origin's relying party when identity starts
+(`onApplicationBootstrap`, before HTTP listens), logs how many (`passkeys_relying_party_claimed`, never the host), and
+stops the start if the database refuses. Reads skip a row without one (the limit still counts it), so an unclaimed
+passkey is never offered or verified. Until every environment has started this version once, the list's first origin
+must be the face the old pair named. A version from before the column still runs on the migrated schema (it writes
+`NULL`, claimed at the next start), so a rollback works; a `CHECK ("rpId" IS NOT NULL) NOT VALID` would have refused its
+registrations. `SET NOT NULL` is owed once every environment's identity has started this version.
 
 ## A cleared value is written as NULL
 

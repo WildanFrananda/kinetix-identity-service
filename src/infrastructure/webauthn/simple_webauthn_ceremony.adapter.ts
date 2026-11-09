@@ -26,16 +26,15 @@ const COSE_RS256 = -257
 const PASSKEY_ALGORITHMS: readonly number[] = [COSE_ES256, COSE_RS256]
 
 class SimpleWebAuthnCeremonyAdapter implements PasskeyCeremonyPort {
-  constructor(private readonly relyingParty: RelyingParty) {}
-
   async registrationOptions(
+    party: RelyingParty,
     account: PasskeyAccount,
     held: readonly PasskeyEntity[],
     lifetimeSeconds: number
   ): Promise<PublicKeyCredentialCreationOptionsJSON> {
     return await generateRegistrationOptions({
-      rpName: this.relyingParty.name,
-      rpID: this.relyingParty.id,
+      rpName: party.name,
+      rpID: party.id,
       userName: account.userName,
       userID: new TextEncoder().encode(account.userHandle),
       userDisplayName: account.userName,
@@ -48,6 +47,7 @@ class SimpleWebAuthnCeremonyAdapter implements PasskeyCeremonyPort {
   }
 
   async verifyRegistration(
+    party: RelyingParty,
     credential: Record<string, unknown>,
     expectedChallenge: string
   ): Promise<PasskeyRegistrationOutcome> {
@@ -57,8 +57,8 @@ class SimpleWebAuthnCeremonyAdapter implements PasskeyCeremonyPort {
       verification = await verifyRegistrationResponse({
         response: credential as unknown as RegistrationResponseJSON,
         expectedChallenge,
-        expectedOrigin: this.relyingParty.origin,
-        expectedRPID: this.relyingParty.id,
+        expectedOrigin: party.origin,
+        expectedRPID: party.id,
         requireUserPresence: true,
         requireUserVerification: true,
         supportedAlgorithmIDs: [...PASSKEY_ALGORITHMS]
@@ -87,11 +87,12 @@ class SimpleWebAuthnCeremonyAdapter implements PasskeyCeremonyPort {
   }
 
   async signInOptions(
+    party: RelyingParty,
     held: readonly PasskeyEntity[],
     lifetimeSeconds: number
   ): Promise<PublicKeyCredentialRequestOptionsJSON> {
     return await generateAuthenticationOptions({
-      rpID: this.relyingParty.id,
+      rpID: party.id,
       allowCredentials: held.map(descriptorOf),
       userVerification: "required",
       timeout: lifetimeSeconds * 1000
@@ -99,6 +100,7 @@ class SimpleWebAuthnCeremonyAdapter implements PasskeyCeremonyPort {
   }
 
   async verifySignIn(
+    party: RelyingParty,
     credential: Record<string, unknown>,
     expectedChallenge: string,
     held: readonly PasskeyEntity[]
@@ -116,8 +118,8 @@ class SimpleWebAuthnCeremonyAdapter implements PasskeyCeremonyPort {
       verification = await verifyAuthenticationResponse({
         response: credential as unknown as AuthenticationResponseJSON,
         expectedChallenge,
-        expectedOrigin: this.relyingParty.origin,
-        expectedRPID: this.relyingParty.id,
+        expectedOrigin: party.origin,
+        expectedRPID: party.id,
         credential: {
           id: passkey.credentialId,
           publicKey: passkey.publicKey,
