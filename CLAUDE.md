@@ -482,3 +482,18 @@ Matching is identity's only outbound gRPC peer.
 
 Every job installs with Bun and runs jest on Node: jest cannot set up its environment under Bun. GitHub's runner has
 Node, and `bunx jest` follows jest's shebang; GitLab's jobs add Node to the pinned Bun image with `apk`.
+
+## A main road is a street
+
+Nominatim names a road's OSM class in `addresstype` (`primary`, `secondary`, `tertiary`, `trunk`, `living_street`,
+`service`, …), with `category` `highway`; only `road`, `residential` and `street` used to map to `STREET`, so every other
+road fell to `UNSPECIFIED`. Order accepts `ROOFTOP`, `STREET` and `SUBURB` only, so until 2026-11-11 a buyer whose address
+was on a main road could not check out (`SHIPPING_ADDRESS_NOT_PLACED` / `TOO_VAGUE`), found by the production credential
+run of 2026-11-08. `nominatimPrecisionOf` now places a `highway` result whose `type` is a road (footways and paths too,
+which is how many a gang is mapped) at `STREET`; a highway point that is not a road, a bus stop for instance, stays
+`UNSPECIFIED`. Checked against the public Nominatim on 2026-11-11: Jalan Jenderal Sudirman answers `primary`, Jalan Kemang
+Raya `tertiary`.
+
+The cache keeps no class, so a remembered `UNSPECIFIED` cannot be re-read: `ForgetUnplacedGeocodes1789700000000` deletes
+those rows, and each is looked up again the next time its address is asked for. Its `down` restores nothing, because a
+cache row is not data. Stores are not affected: a store's point is placed at approval whatever its precision.

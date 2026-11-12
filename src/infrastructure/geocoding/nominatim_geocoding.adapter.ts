@@ -1,8 +1,9 @@
 import { Injectable, Logger } from "@nestjs/common"
 import { ConfigService } from "@nestjs/config"
 import GeocodingProviderPort from "../../domain/ports/geocoding_provider.port"
-import type { GeocodeFailure, GeocodePrecision, ProviderPoint } from "../../types/geo.type"
+import type { GeocodeFailure, ProviderPoint } from "../../types/geo.type"
 import { requiredSetting } from "../config/required_setting"
+import { nominatimPrecisionOf } from "./nominatim_precision"
 
 @Injectable()
 class NominatimGeocodingAdapter implements GeocodingProviderPort {
@@ -90,20 +91,9 @@ class NominatimGeocodingAdapter implements GeocodingProviderPort {
     return {
       latitude,
       longitude,
-      precision: this.precisionOf(first),
+      precision: nominatimPrecisionOf(first),
       displayName
     }
-  }
-
-  private precisionOf(result: Record<string, unknown>): GeocodePrecision {
-    const addressType = String(result["addresstype"] ?? "").toLowerCase()
-
-    if (["building", "house", "amenity", "shop", "office"].includes(addressType)) return "ROOFTOP"
-    if (["road", "residential", "street"].includes(addressType)) return "STREET"
-    if (["suburb", "neighbourhood", "village", "quarter"].includes(addressType)) return "SUBURB"
-    if (["city", "town", "municipality", "county", "state"].includes(addressType)) return "CITY"
-
-    return "UNSPECIFIED"
   }
 
   private unavailable(query: string, detail: string): GeocodeFailure {
