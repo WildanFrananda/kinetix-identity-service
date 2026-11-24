@@ -46,12 +46,20 @@ class UserProfileUsecaseService {
       if (dto.avatarUrl !== undefined) profile.avatarUrl = dto.avatarUrl
     }
 
-    const addressAfter = this.addressOf(profile)
-    const addressChanged = addressAfter !== addressBefore
-    const neverPlaced = profile.latitude === undefined || profile.longitude === undefined
+    const hasCoordinates = dto.latitude !== undefined && dto.longitude !== undefined
 
-    if (addressAfter.length > 0 && (addressChanged || neverPlaced)) {
-      await this.placeOnMap(profile, addressChanged)
+    if (hasCoordinates) {
+      profile.latitude = dto.latitude
+      profile.longitude = dto.longitude
+      profile.geocodedAt = new Date()
+    } else {
+      const addressAfter = this.addressOf(profile)
+      const addressChanged = addressAfter !== addressBefore
+      const neverPlaced = profile.latitude === undefined || profile.longitude === undefined
+
+      if (addressAfter.length > 0 && (addressChanged || neverPlaced)) {
+        await this.placeOnMap(profile, addressChanged)
+      }
     }
 
     return await this.profileRepository.save(profile)
