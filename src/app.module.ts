@@ -33,7 +33,6 @@ import SignInAttemptsService from "./application/services/sign_in_attempts.servi
 import ExpiredRecordSweeperService from "./application/services/expired_record_sweeper.service"
 import PasskeyUsecaseService from "./application/services/passkey_usecase.service"
 import PasskeyRelyingPartyClaimService from "./application/services/passkey_relying_party_claim.service"
-import FleetRegistryGrpcAdapter from "./infrastructure/mesh/fleet_registry_grpc.adapter"
 
 import AuthController from "./adapters/controllers/auth.controller"
 import PasskeyController from "./adapters/controllers/passkey.controller"
@@ -186,10 +185,6 @@ const DATABASE_CONNECT_TIMEOUT_MS = 5000
     {
       provide: "PasskeyChallengeRepositoryPort",
       useClass: TypeormPasskeyChallengeRepositoryAdapter
-    },
-    {
-      provide: "FleetRegistryPort",
-      useClass: FleetRegistryGrpcAdapter
     },
     {
       provide: "GeocodingProviderPort",

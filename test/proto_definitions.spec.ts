@@ -43,6 +43,7 @@ describe("the contracts this service serves", () => {
       "GetPrincipal",
       "GetUserProfile",
       "GetMerchantInfo",
+      "GetCourierStanding",
       "MerchantsChangedSince",
       "ValidateToken"
     ]) {

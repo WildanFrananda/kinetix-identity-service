@@ -7,6 +7,7 @@ type LookupStubs = {
   user?: () => Promise<UserEntity | null>
   profile?: () => Promise<unknown>
   merchant?: () => Promise<MerchantEntity | null>
+  courier?: () => Promise<unknown>
   verifyAccess?: () => Promise<unknown>
 }
 

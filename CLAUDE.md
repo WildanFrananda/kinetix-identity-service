@@ -447,16 +447,14 @@ constraint violation is still what the adapters make of it. `connectTimeoutMS` (
 the wait for a pooled one, so a database that does not answer becomes a 503 rather than a request that hangs until
 Kong gives up.
 
-## A fault on identity's side is not the courier's error
+## Identity owns courier vehicles and standing (TO-D2, 2026-11-23)
 
-`FleetFailure.kind` is `refused` only for the fleet's own `success: false`, which courier registration answers 400 with
-the fleet's code. gRPC `INVALID_ARGUMENT`, `PERMISSION_DENIED`, `UNAUTHENTICATED`, `UNIMPLEMENTED`, `FLEET_METHOD_MISSING`
-and `FLEET_CONTRACT_MISSING` are `fault`: the fleet certainly did nothing, but because of identity's contract, mesh
-identity or allow list, so registration answers 502 `FLEET_FAULT` (approval 502 with the code) with a fixed message and
-the cause in the log. Until 2026-10-23 they were `refused`, and registration told the courier to correct the vehicle.
-Every other outcome is `unknown`, 503. `accountExists: true` is in all three answers. The cause has to go under
-`fields`: `JsonLogger` writes only `message`, `requestId` and `fields`, so the keys these log calls used to set beside
-`message` (the gRPC code and details among them) never reached the log.
+Courier vehicle registration (`vehiclePlate`, `capacityKg`) and admin approval live directly in `courier_applications`
+(migration `CourierApplicationVehicle1789710000000`, which replaced the old `driverId` foreign reference to matching).
+Identity no longer dials `FleetRegistryService` on matching during courier registration or approval; instead, identity is
+the single source of truth and serves `identity.v1.IdentityService/GetCourierStanding` (`found`, `courier_principal_id`,
+`vehicle_plate`, `capacity_kg`, `status`, `may_drive`) to matching over gRPC. `may_drive` is true only when the courier
+application is `approved` and the account holds the `courier` role.
 
 ## Null is not "leave unchanged"
 

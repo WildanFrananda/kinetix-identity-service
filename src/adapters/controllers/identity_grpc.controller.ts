@@ -7,6 +7,8 @@ import PrincipalAliasTypeormEntity from "../../infrastructure/persistence/entiti
 import PrincipalTypeormEntity from "../../infrastructure/persistence/entities/principal_typeorm.entity"
 import TokenService from "../../application/services/token.service"
 import type {
+  GetCourierStandingRequest,
+  GetCourierStandingResponse,
   GetMerchantInfoRequest,
   GetMerchantInfoResponse,
   GetPrincipalRequest,
@@ -25,17 +27,20 @@ import type {
 } from "../../types/identity_grpc.type"
 import { principalKindOf } from "../mappers/principal_kind.mapper"
 import { merchantStatusOf } from "../mappers/merchant_status.mapper"
+import { courierStatusOf } from "../mappers/courier_status.mapper"
 import { fromProtoTimestamp, toProtoTimestamp } from "../mappers/proto_timestamp.mapper"
 import { fromProtoTransactionId } from "../mappers/proto_transaction_id.mapper"
 import { withTimeout } from "../../infrastructure/persistence/with_timeout"
 import UserProfileUsecaseService from "../../application/services/user_profile_usecase.service"
 import UserRepositoryPort from "../../domain/ports/user_repository.port"
 import MerchantRepositoryPort from "../../domain/ports/merchant_repository.port"
+import CourierApplicationRepositoryPort from "../../domain/ports/courier_application_repository.port"
 import ProfileEntity from "../../domain/entities/profile.entity"
 import UserEntity from "../../domain/entities/user.entity"
 import MerchantEntity from "../../domain/entities/merchant.entity"
 import MerchantChange from "../../domain/entities/merchant_change.entity"
 import { maySell } from "../../domain/merchant_standing"
+import { mayDrive } from "../../domain/courier_standing"
 
 import { MERCHANT_ALIAS_SERVICE } from "../../application/services/seller_onboarding_usecase.service"
 
@@ -72,7 +77,9 @@ class IdentityGrpcController {
     @InjectRepository(PrincipalAliasTypeormEntity)
     private readonly aliasRepository: Repository<PrincipalAliasTypeormEntity>,
     @InjectRepository(PrincipalTypeormEntity)
-    private readonly principalRepository: Repository<PrincipalTypeormEntity>
+    private readonly principalRepository: Repository<PrincipalTypeormEntity>,
+    @Inject("CourierApplicationRepositoryPort")
+    private readonly courierApplicationRepository?: CourierApplicationRepositoryPort
   ) {}
 
   @GrpcMethod("IdentityService", "ResolvePrincipal")
@@ -258,6 +265,56 @@ class IdentityGrpcController {
       }
     } catch (error) {
       throw this.unavailable("GetMerchantInfo", principalId, error)
+    }
+  }
+
+  @GrpcMethod("IdentityService", "GetCourierStanding")
+  async getCourierStanding(data: GetCourierStandingRequest): Promise<GetCourierStandingResponse> {
+    const principalId: string = data.principalId ?? data.principal_id ?? ""
+    const empty: GetCourierStandingResponse = {
+      found: false,
+      courier_principal_id: "",
+      vehicle_plate: "",
+      capacity_kg: 0,
+      status: "COURIER_STATUS_UNSPECIFIED",
+      may_drive: false
+    }
+
+    if (principalId === "") {
+      return empty
+    }
+
+    try {
+      const alias = await withTimeout(
+        this.aliasRepository.findOne({ where: { principalId, service: IDENTITY_ALIAS_SERVICE } })
+      )
+      if (!alias) {
+        return empty
+      }
+
+      const userId = Number(alias.localId)
+      const user: UserEntity | null = await withTimeout(this.userRepository.findById(userId))
+      if (!user) {
+        return empty
+      }
+
+      const application = this.courierApplicationRepository
+        ? await withTimeout(this.courierApplicationRepository.findByUser(userId))
+        : null
+      if (!application) {
+        return empty
+      }
+
+      return {
+        found: true,
+        courier_principal_id: principalId,
+        vehicle_plate: application.vehiclePlate ?? "",
+        capacity_kg: application.capacityKg,
+        status: courierStatusOf(application.status),
+        may_drive: mayDrive(user.role, application.status, application.vehiclePlate)
+      }
+    } catch (error) {
+      throw this.unavailable("GetCourierStanding", principalId, error)
     }
   }
 

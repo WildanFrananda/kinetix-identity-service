@@ -344,21 +344,22 @@ describeWithDatabase("account writes against a real database", () => {
       const account = await anAccount("courier@kinetix.test")
       const principalId = await aPrincipal()
 
-      await couriers.recordFiled({ userId: account.id, principalId, driverId: 42 })
+      await couriers.recordFiled({ userId: account.id, principalId, vehiclePlate: "B 1234 KIN", capacityKg: 150 })
       const filed = await couriers.list({ status: "pending", afterId: 0, limit: 10 })
 
-      await couriers.recordApproved({ userId: account.id, principalId, driverId: 42 })
+      await couriers.recordApproved(account.id)
       const approved = await couriers.list({ status: "approved", afterId: 0, limit: 10 })
       const firstApproval = approved.applications[0].approvedAt
 
-      await couriers.recordFiled({ userId: account.id, principalId, driverId: 42 })
-      await couriers.recordApproved({ userId: account.id, principalId, driverId: 42 })
+      await couriers.recordFiled({ userId: account.id, principalId, vehiclePlate: "B 1234 KIN", capacityKg: 150 })
+      await couriers.recordApproved(account.id)
       const again = await couriers.list({ status: null, afterId: 0, limit: 10 })
 
       expect(filed.applications).toEqual([
         expect.objectContaining({
           email: "courier@kinetix.test",
-          driverId: 42,
+          vehiclePlate: "B 1234 KIN",
+          capacityKg: 150,
           status: "pending",
           approvedAt: null
         })
@@ -374,21 +375,27 @@ describeWithDatabase("account writes against a real database", () => {
       const account = await anAccount("rejected-courier@kinetix.test")
       const principalId = await aPrincipal()
 
-      await couriers.recordFiled({ userId: account.id, principalId, driverId: 42 })
+      await couriers.recordFiled({ userId: account.id, principalId, vehiclePlate: "B 1234 KIN", capacityKg: 150 })
       const before = await couriers.findByUser(account.id)
 
       const first = await couriers.recordRejected(account.id)
       const second = await couriers.recordRejected(account.id)
       const rejected = await couriers.findByUser(account.id)
 
-      await couriers.recordFiled({ userId: account.id, principalId, driverId: 43 })
+      await couriers.recordFiled({ userId: account.id, principalId, vehiclePlate: "B 5678 KIN", capacityKg: 200 })
       const reopened = await couriers.findByUser(account.id)
 
       expect([first, second]).toEqual([true, false])
       expect(rejected).toEqual(expect.objectContaining({ status: "rejected", approvedAt: null }))
       expect(rejected?.rejectedAt).not.toBeNull()
       expect(reopened).toEqual(
-        expect.objectContaining({ status: "pending", driverId: 43, rejectedAt: null, approvedAt: null })
+        expect.objectContaining({
+          status: "pending",
+          vehiclePlate: "B 5678 KIN",
+          capacityKg: 200,
+          rejectedAt: null,
+          approvedAt: null
+        })
       )
       expect(Date.parse(reopened?.filedAt ?? "")).toBeGreaterThanOrEqual(Date.parse(before?.filedAt ?? ""))
     })
@@ -397,11 +404,11 @@ describeWithDatabase("account writes against a real database", () => {
       const account = await anAccount("approved-courier@kinetix.test")
       const principalId = await aPrincipal()
 
-      await couriers.recordFiled({ userId: account.id, principalId, driverId: 42 })
-      await couriers.recordApproved({ userId: account.id, principalId, driverId: 42 })
+      await couriers.recordFiled({ userId: account.id, principalId, vehiclePlate: "B 1234 KIN", capacityKg: 150 })
+      await couriers.recordApproved(account.id)
 
       const refused = await couriers.recordRejected(account.id)
-      await couriers.recordFiled({ userId: account.id, principalId, driverId: 42 })
+      await couriers.recordFiled({ userId: account.id, principalId, vehiclePlate: "B 1234 KIN", capacityKg: 150 })
       const after = await couriers.findByUser(account.id)
 
       expect(refused).toBe(false)
@@ -412,8 +419,18 @@ describeWithDatabase("account writes against a real database", () => {
       const kept = await anAccount("kept@kinetix.test")
       const turnedAway = await anAccount("turned-away@kinetix.test")
 
-      await couriers.recordFiled({ userId: kept.id, principalId: await aPrincipal(), driverId: 1 })
-      await couriers.recordFiled({ userId: turnedAway.id, principalId: await aPrincipal(), driverId: 2 })
+      await couriers.recordFiled({
+        userId: kept.id,
+        principalId: await aPrincipal(),
+        vehiclePlate: "B 1001 KIN",
+        capacityKg: 100
+      })
+      await couriers.recordFiled({
+        userId: turnedAway.id,
+        principalId: await aPrincipal(),
+        vehiclePlate: "B 1002 KIN",
+        capacityKg: 100
+      })
       await couriers.recordRejected(turnedAway.id)
 
       const pending = await couriers.list({ status: "pending", afterId: 0, limit: 10 })
@@ -477,9 +494,14 @@ describeWithDatabase("account writes against a real database", () => {
       for (const [index, [status, at]] of decided.entries()) {
         const account = await anAccount(`tally-courier-${index}@kinetix.test`)
         const principalId = await aPrincipal()
-        await couriers.recordFiled({ userId: account.id, principalId, driverId: index + 1 })
+        await couriers.recordFiled({
+          userId: account.id,
+          principalId,
+          vehiclePlate: `B 200${index} KIN`,
+          capacityKg: 100
+        })
         if (status === "approved") {
-          await couriers.recordApproved({ userId: account.id, principalId, driverId: index + 1 })
+          await couriers.recordApproved(account.id)
           await dataSource.query(`UPDATE "courier_applications" SET "approvedAt" = $1 WHERE "userId" = $2`, [
             at,
             account.id
@@ -502,7 +524,7 @@ describeWithDatabase("account writes against a real database", () => {
       const principalId = await aPrincipal()
 
       await expect(
-        couriers.recordFiled({ userId: 2147483000, principalId, driverId: 1 })
+        couriers.recordFiled({ userId: 2147483000, principalId, vehiclePlate: "B 9999 KIN", capacityKg: 100 })
       ).rejects.toBeInstanceOf(MissingReferenceError)
     })
   })

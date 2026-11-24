@@ -34,7 +34,8 @@ type CourierApplicationView = {
   principalId: string
   userId: number
   email: string
-  driverId: number | null
+  vehiclePlate: string | null
+  capacityKg: number
   status: CourierApplicationStatus
   filedAt: string
   approvedAt: string | null
@@ -44,7 +45,8 @@ type CourierApplicationView = {
 type CourierFiling = {
   userId: number
   principalId: string
-  driverId: number
+  vehiclePlate: string
+  capacityKg: number
 }
 
 type ApplicationQuery<S> = {

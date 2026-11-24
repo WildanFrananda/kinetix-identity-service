@@ -7,6 +7,7 @@ const ESTATE = [
   "warehouse@identity.v1.IdentityService/GetMerchantInfo",
   "catalog@identity.v1.IdentityService/GetMerchantInfo",
   "pricing@identity.v1.IdentityService/GetMerchantInfo",
+  "matching@identity.v1.IdentityService/GetCourierStanding",
   "notification@identity.v1.IdentityService/GetUserProfile",
   "search@identity.v1.IdentityService/MerchantsChangedSince"
 ].join(",")
@@ -16,6 +17,7 @@ const IDENTITY_METHODS = [
   "GetPrincipal",
   "GetUserProfile",
   "GetMerchantInfo",
+  "GetCourierStanding",
   "ValidateToken",
   "MerchantsChangedSince"
 ]
@@ -25,6 +27,7 @@ const GRANTED: Record<string, string[]> = {
   warehouse: ["GetMerchantInfo"],
   catalog: ["GetMerchantInfo"],
   pricing: ["GetMerchantInfo"],
+  matching: ["GetCourierStanding"],
   notification: ["GetUserProfile"],
   search: ["MerchantsChangedSince"]
 }

@@ -49,6 +49,26 @@ type MerchantStatus =
   | "MERCHANT_STATUS_SUSPENDED"
   | "MERCHANT_STATUS_CLOSED"
 
+type CourierStatus =
+  | "COURIER_STATUS_UNSPECIFIED"
+  | "COURIER_STATUS_PENDING"
+  | "COURIER_STATUS_APPROVED"
+  | "COURIER_STATUS_REJECTED"
+
+type GetCourierStandingRequest = {
+  principal_id?: string
+  principalId?: string
+}
+
+type GetCourierStandingResponse = {
+  found: boolean
+  courier_principal_id: string
+  vehicle_plate: string
+  capacity_kg: number
+  status: CourierStatus
+  may_drive: boolean
+}
+
 type GetUserProfileRequest = {
   principal_id?: string
   principalId?: string
@@ -144,6 +164,9 @@ type ValidateTokenResponse = {
 }
 
 export type {
+  CourierStatus,
+  GetCourierStandingRequest,
+  GetCourierStandingResponse,
   GetMerchantInfoRequest,
   MerchantCursorInput,
   MerchantCursorView,

@@ -1,18 +1,15 @@
 import {
-  BadGatewayException,
   BadRequestException,
   ConflictException,
   Inject,
   Injectable,
   Logger,
-  ServiceUnavailableException,
   UnauthorizedException
 } from "@nestjs/common"
 import UserEntity from "../../domain/entities/user.entity"
 import { normalisedEmail } from "../../domain/email_address"
-import FleetRegistryError from "../../domain/errors/fleet_registry.error"
+import RecordConflictError from "../../domain/errors/record_conflict.error"
 import CourierApplicationRepositoryPort from "../../domain/ports/courier_application_repository.port"
-import FleetRegistryPort from "../../domain/ports/fleet_registry.port"
 import UserRepositoryPort from "../../domain/ports/user_repository.port"
 import AuthTokenOutputDto from "../dto/auth_token_output.dto"
 import RegisterCourierInputDto from "../dto/register_courier_input.dto"
@@ -38,8 +35,6 @@ class CourierRegistrationUsecaseService {
   constructor(
     private readonly authUsecase: AuthUsecaseService,
     private readonly profileUsecase: UserProfileUsecaseService,
-    @Inject("FleetRegistryPort")
-    private readonly fleet: FleetRegistryPort,
     @Inject("UserRepositoryPort")
     private readonly userRepository: UserRepositoryPort,
     @Inject("CourierApplicationRepositoryPort")
@@ -47,6 +42,8 @@ class CourierRegistrationUsecaseService {
   ) {}
 
   async register(dto: RegisterCourierInputDto, context: CallContext): Promise<RegisterCourierOutputDto> {
+    const vehiclePlate = this.normalisePlate(dto.vehiclePlate)
+    const capacityKg = this.requireCapacity(dto.capacityKg)
     const session: AuthTokenOutputDto = await this.sessionFor(dto, context)
 
     await this.profileUsecase.updateProfile(session.user.id, {
@@ -54,21 +51,55 @@ class CourierRegistrationUsecaseService {
       phoneNumber: dto.phoneNumber
     })
 
-    const driverId: number = await this.fileVehicle(session, dto)
-
-    await this.applications.recordFiled({
-      userId: session.user.id,
-      principalId: session.user.principalId,
-      driverId
-    })
+    try {
+      await this.applications.recordFiled({
+        userId: session.user.id,
+        principalId: session.user.principalId,
+        vehiclePlate,
+        capacityKg
+      })
+    } catch (error) {
+      if (error instanceof RecordConflictError) {
+        throw new ConflictException({
+          error: "VEHICLE_PLATE_TAKEN",
+          message:
+            `Your account exists, but vehicle plate ${vehiclePlate} is already registered to another courier. ` +
+            "Correct the vehicle plate and submit again with the same email and password; the account will be reused.",
+          accountExists: true
+        })
+      }
+      throw error
+    }
 
     return new RegisterCourierOutputDto(
       session.accessToken,
       session.refreshToken,
       session.expiresIn,
       session.user,
-      driverId
+      vehiclePlate,
+      capacityKg
     )
+  }
+
+  private normalisePlate(raw: string): string {
+    const plate = (raw ?? "").trim().toUpperCase()
+    if (plate.length === 0) {
+      throw new BadRequestException({
+        error: "BLANK_VEHICLE_PLATE",
+        message: "vehiclePlate is required: a courier registration files a vehicle"
+      })
+    }
+    return plate
+  }
+
+  private requireCapacity(capacityKg: number): number {
+    if (!Number.isInteger(capacityKg) || capacityKg <= 0 || capacityKg > 5000) {
+      throw new BadRequestException({
+        error: "NO_CAPACITY",
+        message: "capacityKg must be a whole number between 1 and 5000"
+      })
+    }
+    return capacityKg
   }
 
   private async sessionFor(dto: RegisterCourierInputDto, context: CallContext): Promise<AuthTokenOutputDto> {
@@ -114,71 +145,6 @@ class CourierRegistrationUsecaseService {
     })
 
     return await this.authUsecase.startSession(account, context)
-  }
-
-  private async fileVehicle(
-    session: AuthTokenOutputDto,
-    dto: RegisterCourierInputDto
-  ): Promise<number> {
-    try {
-      const registration = await this.fleet.registerDriver({
-        principalId: session.user.principalId,
-        vehiclePlate: dto.vehiclePlate,
-        capacityKg: dto.capacityKg
-      })
-
-      if (registration.alreadyRegistered) {
-        this.logger.log({
-          message: "the vehicle was already filed for this principal",
-          fields: { driver_id: registration.driverId }
-        })
-      }
-
-      return registration.driverId
-    } catch (error) {
-      throw this.explain(error)
-    }
-  }
-
-  private explain(error: unknown): Error {
-    if (!(error instanceof FleetRegistryError)) {
-      return error instanceof Error ? error : new Error(String(error))
-    }
-
-    if (error.isFault) {
-      this.logger.error({
-        message: "the fleet could not be asked to file a courier's vehicle",
-        fields: { reason: error.message }
-      })
-
-      return new BadGatewayException({
-        error: "FLEET_FAULT",
-        message:
-          "Your account exists, but identity could not file your vehicle because of a fault on its own " +
-          "side. Nothing was filed. Submit the same details again later with the same email and " +
-          "password; the account will be reused.",
-        accountExists: true
-      })
-    }
-
-    if (error.definitelyDidNothing) {
-      return new BadRequestException({
-        error: error.failure.code,
-        message:
-          `Your account exists, but the fleet refused the vehicle: ${error.failure.message}. ` +
-          "Correct the vehicle details and submit again with the same email and password; " +
-          "the account will be reused.",
-        accountExists: true
-      })
-    }
-
-    return new ServiceUnavailableException({
-      error: error.failure.code,
-      message:
-        "Your account exists, but the fleet could not be reached to file your vehicle. " +
-        "Submit the same details again to finish — nothing will be duplicated.",
-      accountExists: true
-    })
   }
 }
 

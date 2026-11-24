@@ -1,22 +1,24 @@
 import {
-  BadGatewayException,
   ConflictException,
-  NotFoundException,
-  ServiceUnavailableException
+  NotFoundException
 } from "@nestjs/common"
-import FleetRegistryError from "../src/domain/errors/fleet_registry.error"
 import UserEntity from "../src/domain/entities/user.entity"
 import CourierOnboardingUsecaseService from "../src/application/services/courier_onboarding_usecase.service"
+import type { CourierApplicationView } from "../src/types/application.type"
 
 const PRINCIPAL = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 
-function anApplication(status: "pending" | "approved" | "rejected"): Record<string, unknown> {
+function anApplication(
+  status: "pending" | "approved" | "rejected",
+  vehiclePlate: string | null = "B 1234 KIN"
+): CourierApplicationView {
   return {
     applicationId: 3,
     principalId: PRINCIPAL,
     userId: 7,
     email: "driver@kinetix.test",
-    driverId: 42,
+    vehiclePlate,
+    capacityKg: 150,
     status,
     filedAt: "2026-10-28T08:00:00.000Z",
     approvedAt: status === "approved" ? "2026-10-28T09:00:00.000Z" : null,
@@ -28,7 +30,6 @@ describe("CourierOnboardingUsecaseService Unit Tests", () => {
   let service: CourierOnboardingUsecaseService
   let mockUserRepo: any
   let mockPrincipalResolver: any
-  let mockFleet: any
   let mockApplications: any
   let user: UserEntity
 
@@ -44,23 +45,18 @@ describe("CourierOnboardingUsecaseService Unit Tests", () => {
       userIdForPrincipal: jest.fn().mockResolvedValue(7),
       syncKind: jest.fn().mockResolvedValue(undefined)
     }
-    mockFleet = {
-      registerDriver: jest.fn(),
-      activateDriver: jest.fn().mockResolvedValue({ driverId: 42, alreadyActive: false })
-    }
 
     mockApplications = {
       recordFiled: jest.fn(),
-      recordApproved: jest.fn().mockResolvedValue(undefined),
+      recordApproved: jest.fn().mockResolvedValue(anApplication("approved")),
       recordRejected: jest.fn().mockResolvedValue(true),
-      findByUser: jest.fn().mockResolvedValue(null),
+      findByUser: jest.fn().mockResolvedValue(anApplication("pending")),
       list: jest.fn()
     }
 
     service = new CourierOnboardingUsecaseService(
       mockUserRepo,
       mockPrincipalResolver,
-      mockFleet,
       mockApplications
     )
   })
@@ -87,8 +83,8 @@ describe("CourierOnboardingUsecaseService Unit Tests", () => {
       "principalId",
       "email",
       "role",
-      "driverId",
-      "fleetActivated"
+      "vehiclePlate",
+      "capacityKg"
     ])
     expect(Object.values(res)).not.toContain("hash")
     expect(Object.values(res)).not.toContain("TOTPSECRET")
@@ -96,125 +92,30 @@ describe("CourierOnboardingUsecaseService Unit Tests", () => {
 
   it("is idempotent: approving an existing courier restates the fact", async () => {
     user.role = "courier"
+    mockApplications.findByUser.mockResolvedValue(anApplication("approved"))
 
     const res = await service.approveCourier(PRINCIPAL)
 
     expect(res.role).toBe("courier")
+    expect(res.vehiclePlate).toBe("B 1234 KIN")
+    expect(res.capacityKg).toBe(150)
     expect(mockUserRepo.save).not.toHaveBeenCalled()
-  })
-
-  it("activates the fleet row, so the driver can actually work", async () => {
-    const res = await service.approveCourier(PRINCIPAL)
-
-    expect(mockFleet.activateDriver).toHaveBeenCalledWith(PRINCIPAL)
-    expect(res.driverId).toBe(42)
-    expect(res.fleetActivated).toBe(true)
-  })
-
-  it("sets the role before telling the fleet, so a fleet failure leaves the honest state", async () => {
-    const order: string[] = []
-    mockUserRepo.save.mockImplementation(async (u: UserEntity) => {
-      order.push("role")
-      return u
-    })
-    mockFleet.activateDriver.mockImplementation(async () => {
-      order.push("fleet")
-      return { driverId: 42, alreadyActive: false }
-    })
-
-    await service.approveCourier(PRINCIPAL)
-
-    expect(order).toEqual(["role", "fleet"])
-  })
-
-  it("reconciles the fleet when re-approving an account that is already a courier", async () => {
-    user.role = "courier"
-    mockFleet.activateDriver.mockResolvedValue({ driverId: 42, alreadyActive: true })
-
-    const res = await service.approveCourier(PRINCIPAL)
-
-    expect(mockFleet.activateDriver).toHaveBeenCalledWith(PRINCIPAL)
-    expect(res.fleetActivated).toBe(true)
   })
 
   it("records the approval on the application", async () => {
     await service.approveCourier(PRINCIPAL)
 
-    expect(mockApplications.recordApproved).toHaveBeenCalledWith({
-      userId: 7,
-      principalId: PRINCIPAL,
-      driverId: 42
-    })
+    expect(mockApplications.recordApproved).toHaveBeenCalledWith(7)
   })
 
   it("refuses an account with no vehicle filed and leaves it a customer", async () => {
-    mockFleet.activateDriver.mockRejectedValue(
-      new FleetRegistryError({
-        kind: "refused",
-        code: "NO_DRIVER_RECORD",
-        message: "that principal has no vehicle in this fleet"
-      })
-    )
+    mockApplications.findByUser.mockResolvedValue(null)
 
     await expect(service.approveCourier(PRINCIPAL)).rejects.toBeInstanceOf(ConflictException)
 
     expect(user.role).toBe("customer")
-    expect(mockUserRepo.save).toHaveBeenLastCalledWith(expect.objectContaining({ role: "customer" }))
-    expect(mockPrincipalResolver.syncKind).toHaveBeenLastCalledWith(PRINCIPAL, "customer")
-    expect(mockApplications.recordApproved).not.toHaveBeenCalled()
-  })
-
-  it("does not tell an admin to approve again when the fleet definitely refused", async () => {
-    mockFleet.activateDriver.mockRejectedValue(
-      new FleetRegistryError({
-        kind: "fault",
-        code: "FLEET_PERMISSION_DENIED",
-        message: "identity is not on matching's allow list"
-      })
-    )
-
-    const refusal = await service.approveCourier(PRINCIPAL).then(
-      () => {
-        throw new Error("the approval was expected to be refused")
-      },
-      (error: unknown) => error
-    )
-
-    expect(refusal).toBeInstanceOf(BadGatewayException)
-    const body = (refusal as BadGatewayException).getResponse() as Record<string, unknown>
-    expect(body.error).toBe("FLEET_PERMISSION_DENIED")
-    expect(String(body.message)).not.toMatch(/approve again/i)
-    expect(user.role).toBe("customer")
-  })
-
-  it("keeps a courier a courier when the fleet refuses a repeated approval", async () => {
-    user.role = "courier"
-    mockFleet.activateDriver.mockRejectedValue(
-      new FleetRegistryError({
-        kind: "refused",
-        code: "NO_DRIVER_RECORD",
-        message: "that principal has no vehicle in this fleet"
-      })
-    )
-
-    await expect(service.approveCourier(PRINCIPAL)).rejects.toBeInstanceOf(ConflictException)
-    expect(user.role).toBe("courier")
     expect(mockUserRepo.save).not.toHaveBeenCalled()
-  })
-
-  it("reports a fleet it could not reach, rather than claiming the driver is ready", async () => {
-    mockFleet.activateDriver.mockRejectedValue(
-      new FleetRegistryError({
-        kind: "unknown",
-        code: "FLEET_UNAVAILABLE",
-        message: "no route to the fleet"
-      })
-    )
-
-    await expect(service.approveCourier(PRINCIPAL)).rejects.toBeInstanceOf(
-      ServiceUnavailableException
-    )
-    expect(user.role).toBe("courier")
+    expect(mockApplications.recordApproved).not.toHaveBeenCalled()
   })
 
   it("refuses to turn an admin into a courier", async () => {
@@ -250,13 +151,13 @@ describe("CourierOnboardingUsecaseService Unit Tests", () => {
 
     expect(user.role).toBe("customer")
     expect(mockUserRepo.save).not.toHaveBeenCalled()
-    expect(mockFleet.activateDriver).not.toHaveBeenCalled()
     expect(mockApplications.recordApproved).not.toHaveBeenCalled()
   })
 
   describe("rejection", () => {
     beforeEach(() => {
       mockApplications.findByUser
+        .mockReset()
         .mockResolvedValueOnce(anApplication("pending"))
         .mockResolvedValueOnce(anApplication("rejected"))
     })
@@ -268,12 +169,11 @@ describe("CourierOnboardingUsecaseService Unit Tests", () => {
       expect(rejected).toEqual(anApplication("rejected"))
     })
 
-    it("leaves the account a customer and never asks the fleet", async () => {
+    it("leaves the account a customer", async () => {
       await service.rejectCourier(PRINCIPAL)
 
       expect(user.role).toBe("customer")
       expect(mockUserRepo.save).not.toHaveBeenCalled()
-      expect(mockFleet.activateDriver).not.toHaveBeenCalled()
     })
 
     it("refuses an account whose approval began, since a rejection would leave the role", async () => {
