@@ -67,21 +67,43 @@ class CourierOnboardingUsecaseService {
       })
     }
 
-    if (user.role === "courier") {
-      return await this.approved(user, principalId)
-    }
-
-    if (user.role !== "customer") {
+    if (user.role !== "courier" && user.role !== "customer") {
       throw new ConflictException(
         `Account ${principalId} is a ${user.role}; promoting it to courier would revoke that role`
       )
     }
 
-    user.role = "courier"
-    await this.userRepository.save(user)
-    await this.principalResolver.syncKind(principalId, user.role)
+    const approvedApplication = await this.applications.recordApproved(user.id)
+    if (!approvedApplication) {
+      const latest = await this.applications.findByUser(userId)
+      if (latest?.status === "rejected") {
+        throw new ConflictException(
+          `The courier application of principal ${principalId} was rejected; it can be approved only after ` +
+            "the courier registers the vehicle again"
+        )
+      }
 
-    return await this.approved(user, principalId)
+      throw new ConflictException({
+        error: NO_VEHICLE,
+        message:
+          "This account has filed no vehicle, so it cannot be approved as a courier. Nothing was " +
+          "changed; it must register a vehicle first."
+      })
+    }
+
+    if (user.role !== "courier") {
+      user.role = "courier"
+      await this.userRepository.save(user)
+      await this.principalResolver.syncKind(principalId, user.role)
+    }
+
+    return new ApproveCourierOutputDto(
+      principalId,
+      user.email,
+      user.role,
+      approvedApplication.vehiclePlate,
+      approvedApplication.capacityKg
+    )
   }
 
   async rejectCourier(principalId: string): Promise<CourierApplicationView> {
@@ -130,29 +152,6 @@ class CourierOnboardingUsecaseService {
     }
 
     return application
-  }
-
-  private async approved(
-    user: UserEntity,
-    principalId: string
-  ): Promise<ApproveCourierOutputDto> {
-    const application = await this.applications.recordApproved(user.id)
-    if (!application) {
-      throw new ConflictException({
-        error: NO_VEHICLE,
-        message:
-          "This account has filed no vehicle, so it cannot be approved as a courier. Nothing was " +
-          "changed; it must register a vehicle first."
-      })
-    }
-
-    return new ApproveCourierOutputDto(
-      principalId,
-      user.email,
-      user.role,
-      application.vehiclePlate,
-      application.capacityKg
-    )
   }
 }
 

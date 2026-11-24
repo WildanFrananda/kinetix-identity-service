@@ -154,6 +154,19 @@ describe("CourierOnboardingUsecaseService Unit Tests", () => {
     expect(mockApplications.recordApproved).not.toHaveBeenCalled()
   })
 
+  it("leaves the account as customer if a rejection commits before approval", async () => {
+    mockApplications.findByUser
+      .mockResolvedValueOnce(anApplication("pending"))
+      .mockResolvedValueOnce(anApplication("rejected"))
+    mockApplications.recordApproved.mockResolvedValueOnce(null)
+
+    await expect(service.approveCourier(PRINCIPAL)).rejects.toBeInstanceOf(ConflictException)
+
+    expect(user.role).toBe("customer")
+    expect(mockUserRepo.save).not.toHaveBeenCalled()
+    expect(mockPrincipalResolver.syncKind).not.toHaveBeenCalled()
+  })
+
   describe("rejection", () => {
     beforeEach(() => {
       mockApplications.findByUser

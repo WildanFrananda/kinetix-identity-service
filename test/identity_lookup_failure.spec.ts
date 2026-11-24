@@ -137,27 +137,33 @@ describe("an identity lookup that cannot be answered", () => {
     })
   })
 
-  it("answers may_drive false for a pending or rejected courier application", async () => {
-    const response = await controllerWith({
-      alias: aliasFor("identity"),
-      user: async () => new UserEntity(1, "c@kinetix.test", "h", "customer"),
-      courier: async () => ({
-        applicationId: 1,
-        principalId: "p-1",
-        userId: 1,
-        email: "c@kinetix.test",
-        vehiclePlate: "B 1234 KIN",
-        capacityKg: 150,
-        status: "pending",
-        filedAt: "2026-10-28T08:00:00.000Z",
-        approvedAt: null,
-        rejectedAt: null
-      })
-    }).getCourierStanding({ principal_id: "p-1" })
+  it("answers may_drive false when role or application status does not permit driving", async () => {
+    for (const [role, status, expectedStatus] of [
+      ["courier", "pending", "COURIER_STATUS_PENDING"],
+      ["courier", "rejected", "COURIER_STATUS_REJECTED"],
+      ["customer", "approved", "COURIER_STATUS_APPROVED"]
+    ] as const) {
+      const response = await controllerWith({
+        alias: aliasFor("identity"),
+        user: async () => new UserEntity(1, "c@kinetix.test", "h", role),
+        courier: async () => ({
+          applicationId: 1,
+          principalId: "p-1",
+          userId: 1,
+          email: "c@kinetix.test",
+          vehiclePlate: "B 1234 KIN",
+          capacityKg: 150,
+          status,
+          filedAt: "2026-10-28T08:00:00.000Z",
+          approvedAt: status === "approved" ? "2026-10-28T09:00:00.000Z" : null,
+          rejectedAt: status === "rejected" ? "2026-10-28T09:00:00.000Z" : null
+        })
+      }).getCourierStanding({ principal_id: "p-1" })
 
-    expect(response.found).toBe(true)
-    expect(response.status).toBe("COURIER_STATUS_PENDING")
-    expect(response.may_drive).toBe(false)
+      expect(response.found).toBe(true)
+      expect(response.status).toBe(expectedStatus)
+      expect(response.may_drive).toBe(false)
+    }
   })
 
   it("is UNAVAILABLE for a profile when the database fails", async () => {
