@@ -145,4 +145,54 @@ describe("saving a profile address", () => {
 
     expect(geocoding.calls).toHaveLength(0)
   })
+
+  it("keeps caller coordinates on a new profile without asking the geocoder", async () => {
+    const repository = new StubRepository()
+    const geocoding = new StubGeocoding()
+
+    const saved = await service(repository, geocoding).updateProfile(7, {
+      streetAddress: "Jl. Cikini Raya No. 99",
+      city: "Jakarta",
+      postalCode: "10330",
+      latitude: -6.1912,
+      longitude: 106.8391
+    })
+
+    expect(saved.latitude).toBe(-6.1912)
+    expect(saved.longitude).toBe(106.8391)
+    expect(saved.geocodedAt).toBeInstanceOf(Date)
+    expect(geocoding.calls).toHaveLength(0)
+  })
+
+  it("keeps caller coordinates when the address changes without overwriting them via geocoding", async () => {
+    const repository = new StubRepository(profileAt("Jl. Cikini Raya No. 99", -6.1754, 106.8272))
+    const geocoding = new StubGeocoding(MALIOBORO)
+
+    const saved = await service(repository, geocoding).updateProfile(7, {
+      streetAddress: "Jl. Malioboro No. 88",
+      latitude: -7.7931,
+      longitude: 110.3662
+    })
+
+    expect(saved.streetAddress).toBe("Jl. Malioboro No. 88")
+    expect(saved.latitude).toBe(-7.7931)
+    expect(saved.longitude).toBe(110.3662)
+    expect(saved.geocodedAt).toBeInstanceOf(Date)
+    expect(geocoding.calls).toHaveLength(0)
+  })
+
+  it("updates coordinates directly when only the map pin changes", async () => {
+    const repository = new StubRepository(profileAt("Jl. Cikini Raya No. 99", -6.1754, 106.8272))
+    const geocoding = new StubGeocoding()
+
+    const saved = await service(repository, geocoding).updateProfile(7, {
+      latitude: -6.1761,
+      longitude: 106.8281
+    })
+
+    expect(saved.latitude).toBe(-6.1761)
+    expect(saved.longitude).toBe(106.8281)
+    expect(saved.geocodedAt).toBeInstanceOf(Date)
+    expect(geocoding.calls).toHaveLength(0)
+  })
 })

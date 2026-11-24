@@ -107,6 +107,45 @@ describe("what the input DTOs accept", () => {
 
       expect(refused).toEqual(["streetAddress"])
     })
+
+    it.each([
+      { latitude: -6.2615, longitude: 106.8106 },
+      { latitude: -90, longitude: -180 },
+      { latitude: 90, longitude: 180 },
+      { latitude: 0, longitude: 0 }
+    ])("takes paired coordinates %j", async (coords) => {
+      expect(await refusedFields(UpdateProfileInputDto, coords)).toEqual([])
+    })
+
+    it("refuses latitude without longitude", async () => {
+      expect(await refusedFields(UpdateProfileInputDto, { latitude: -6.2615 })).toEqual(["longitude"])
+    })
+
+    it("refuses longitude without latitude", async () => {
+      expect(await refusedFields(UpdateProfileInputDto, { longitude: 106.8106 })).toEqual(["latitude"])
+    })
+
+    it.each([
+      { latitude: null },
+      { longitude: null },
+      { latitude: null, longitude: null },
+      { latitude: -6.2615, longitude: null },
+      { latitude: null, longitude: 106.8106 }
+    ])("refuses null coordinates %j", async (coords) => {
+      expect(await refusedFields(UpdateProfileInputDto, coords)).not.toEqual([])
+    })
+
+    it.each([
+      { latitude: -90.0001, longitude: 106.8106 },
+      { latitude: 90.0001, longitude: 106.8106 },
+      { latitude: -6.2615, longitude: -180.0001 },
+      { latitude: -6.2615, longitude: 180.0001 },
+      { latitude: Number.NaN, longitude: 106.8106 },
+      { latitude: -6.2615, longitude: Number.POSITIVE_INFINITY },
+      { latitude: "-6.2615", longitude: "106.8106" }
+    ])("refuses out-of-range or non-finite coordinates %j", async (coords) => {
+      expect(await refusedFields(UpdateProfileInputDto, coords)).not.toEqual([])
+    })
   })
 
   it("refuses a logout that sends a null refresh token", async () => {

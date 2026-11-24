@@ -1,5 +1,9 @@
-import { IsOptional, IsString, IsUrl, Matches, MaxLength, ValidateIf } from "class-validator"
+import { IsNumber, IsOptional, IsString, IsUrl, Matches, Max, MaxLength, Min, ValidateIf } from "class-validator"
 import { isSent } from "./sent_value.validation"
+
+function hasCoordinates(dto: UpdateProfileInputDto): boolean {
+  return dto.latitude !== undefined || dto.longitude !== undefined
+}
 
 class UpdateProfileInputDto {
   @ValidateIf(isSent)
@@ -34,6 +38,24 @@ class UpdateProfileInputDto {
   )
   @MaxLength(2048)
   avatarUrl?: string
+
+  @ValidateIf(hasCoordinates)
+  @IsNumber(
+    { allowNaN: false, allowInfinity: false },
+    { message: "latitude must be a number when coordinates are sent" }
+  )
+  @Min(-90)
+  @Max(90)
+  latitude?: number
+
+  @ValidateIf(hasCoordinates)
+  @IsNumber(
+    { allowNaN: false, allowInfinity: false },
+    { message: "longitude must be a number when coordinates are sent" }
+  )
+  @Min(-180)
+  @Max(180)
+  longitude?: number
 }
 
 export default UpdateProfileInputDto

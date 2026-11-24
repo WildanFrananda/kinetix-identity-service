@@ -309,6 +309,30 @@ describe("identity's HTTP routes", () => {
       expect(response.statusCode).toBe(200)
       expect(profiles.updateProfile).toHaveBeenCalledWith(8, { avatarUrl: null })
     })
+
+    it("refuses unpaired coordinates with 400", async () => {
+      const response = await send(app, {
+        method: "PUT",
+        url: "/api/v1/users/8/profile",
+        payload: { latitude: -6.2615 },
+        headers: { [CALLER_HEADER]: "customer8" }
+      })
+
+      expect(response.statusCode).toBe(400)
+      expect(profiles.updateProfile).not.toHaveBeenCalled()
+    })
+
+    it("passes paired coordinates through to the profile service", async () => {
+      const response = await send(app, {
+        method: "PUT",
+        url: "/api/v1/users/8/profile",
+        payload: { latitude: -6.2615, longitude: 106.8106 },
+        headers: { [CALLER_HEADER]: "customer8" }
+      })
+
+      expect(response.statusCode).toBe(200)
+      expect(profiles.updateProfile).toHaveBeenCalledWith(8, { latitude: -6.2615, longitude: 106.8106 })
+    })
   })
 
   describe("logout", () => {
