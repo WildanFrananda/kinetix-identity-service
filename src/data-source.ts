@@ -21,6 +21,7 @@ import { SellerApplicationRejectedAt1789670000000 } from "./migrations/178967000
 import { Passkeys1789680000000 } from "./migrations/1789680000000-Passkeys"
 import { PasskeyRelyingParty1789690000000 } from "./migrations/1789690000000-PasskeyRelyingParty"
 import { ForgetUnplacedGeocodes1789700000000 } from "./migrations/1789700000000-ForgetUnplacedGeocodes"
+import { CourierApplicationVehicle1789710000000 } from "./migrations/1789710000000-CourierApplicationVehicle"
 
 import AccountSignInAttemptTypeormEntity from "./infrastructure/persistence/entities/account_sign_in_attempt_typeorm.entity"
 import CourierApplicationTypeormEntity from "./infrastructure/persistence/entities/courier_application_typeorm.entity"
@@ -82,7 +83,8 @@ export default new DataSource({
     SellerApplicationRejectedAt1789670000000,
     Passkeys1789680000000,
     PasskeyRelyingParty1789690000000,
-    ForgetUnplacedGeocodes1789700000000
+    ForgetUnplacedGeocodes1789700000000,
+    CourierApplicationVehicle1789710000000
   ],
   synchronize: false
 })

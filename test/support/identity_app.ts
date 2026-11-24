@@ -109,16 +109,23 @@ async function identityApp(gate: ClientGateService = labClientGate()) {
     updateProfile: jest.fn().mockResolvedValue({ userId: 7 })
   }
 
-  const fleet = {
-    registerDriver: jest.fn().mockResolvedValue({ driverId: 42, alreadyRegistered: false }),
-    activateDriver: jest.fn()
+  const courierApplications = {
+    recordFiled: jest.fn().mockResolvedValue({
+      applicationId: 1,
+      principalId: principalOf(7),
+      userId: 7,
+      email: "new.courier@kinetix.test",
+      vehiclePlate: "B 1234 KIN",
+      capacityKg: 150,
+      status: "pending",
+      filedAt: new Date().toISOString(),
+      approvedAt: null,
+      rejectedAt: null
+    })
   }
-
-  const courierApplications = { recordFiled: jest.fn().mockResolvedValue(undefined) }
   const registration = new CourierRegistrationUsecaseService(
     auth,
     profiles as any,
-    fleet as any,
     users,
     courierApplications as any
   )
@@ -166,7 +173,7 @@ async function identityApp(gate: ClientGateService = labClientGate()) {
     sellers,
     couriers,
     profiles,
-    fleet
+    courierApplications
   }
 }
 

@@ -36,6 +36,7 @@ function providersFor(stubs: LookupStubs) {
     profileUsecase: { getProfile: stubs.profile ?? (async () => null) },
     userRepository: { findById: stubs.user ?? (async () => new UserEntity(1, "a@kinetix.test", "h", "customer")) },
     merchantRepository: { findById: stubs.merchant ?? (async () => null) },
+    courierApplicationRepository: { findByUser: stubs.courier ?? (async () => null) },
     tokenService: { verifyAccess: stubs.verifyAccess ?? (async () => ({ sub: "p-1" })) },
     aliasRepository: { findOne: stubs.alias ?? aliasFor(MERCHANT_ALIAS_SERVICE), find: async () => [] },
     principalRepository: { findOne: async () => ({ id: "p-1", kind: "customer" }) }
@@ -50,7 +51,8 @@ function controllerWith(stubs: LookupStubs): IdentityGrpcController {
     p.merchantRepository as never,
     p.tokenService as never,
     p.aliasRepository as never,
-    p.principalRepository as never
+    p.principalRepository as never,
+    p.courierApplicationRepository as never
   )
 }
 
@@ -100,6 +102,68 @@ describe("an identity lookup that cannot be answered", () => {
     const response = await controllerWith({ merchant: async () => null }).getMerchantInfo({ principal_id: "p-1" })
     expect(response.found).toBe(false)
     expect(response.may_sell).toBe(false)
+  })
+
+  it("is UNAVAILABLE for a courier when the database fails, not a courier that does not exist", async () => {
+    const code = await codeOf(controllerWith({ alias: databaseDown }).getCourierStanding({ principal_id: "p-1" }))
+    expect(code).toBe(grpc.status.UNAVAILABLE)
+  })
+
+  it("answers a courier's standing with vehicle_plate, capacity_kg and may_drive", async () => {
+    const response = await controllerWith({
+      alias: aliasFor("identity"),
+      user: async () => new UserEntity(1, "c@kinetix.test", "h", "courier"),
+      courier: async () => ({
+        applicationId: 1,
+        principalId: "p-1",
+        userId: 1,
+        email: "c@kinetix.test",
+        vehiclePlate: "B 1234 KIN",
+        capacityKg: 150,
+        status: "approved",
+        filedAt: "2026-10-28T08:00:00.000Z",
+        approvedAt: "2026-10-28T09:00:00.000Z",
+        rejectedAt: null
+      })
+    }).getCourierStanding({ principal_id: "p-1" })
+
+    expect(response).toEqual({
+      found: true,
+      courier_principal_id: "p-1",
+      vehicle_plate: "B 1234 KIN",
+      capacity_kg: 150,
+      status: "COURIER_STATUS_APPROVED",
+      may_drive: true
+    })
+  })
+
+  it("answers may_drive false when role or application status does not permit driving", async () => {
+    for (const [role, status, expectedStatus] of [
+      ["courier", "pending", "COURIER_STATUS_PENDING"],
+      ["courier", "rejected", "COURIER_STATUS_REJECTED"],
+      ["customer", "approved", "COURIER_STATUS_APPROVED"]
+    ] as const) {
+      const response = await controllerWith({
+        alias: aliasFor("identity"),
+        user: async () => new UserEntity(1, "c@kinetix.test", "h", role),
+        courier: async () => ({
+          applicationId: 1,
+          principalId: "p-1",
+          userId: 1,
+          email: "c@kinetix.test",
+          vehiclePlate: "B 1234 KIN",
+          capacityKg: 150,
+          status,
+          filedAt: "2026-10-28T08:00:00.000Z",
+          approvedAt: status === "approved" ? "2026-10-28T09:00:00.000Z" : null,
+          rejectedAt: status === "rejected" ? "2026-10-28T09:00:00.000Z" : null
+        })
+      }).getCourierStanding({ principal_id: "p-1" })
+
+      expect(response.found).toBe(true)
+      expect(response.status).toBe(expectedStatus)
+      expect(response.may_drive).toBe(false)
+    }
   })
 
   it("is UNAVAILABLE for a profile when the database fails", async () => {
@@ -160,6 +224,7 @@ describe("on the wire", () => {
         { provide: UserProfileUsecaseService, useValue: p.profileUsecase },
         { provide: "UserRepositoryPort", useValue: p.userRepository },
         { provide: "MerchantRepositoryPort", useValue: p.merchantRepository },
+        { provide: "CourierApplicationRepositoryPort", useValue: p.courierApplicationRepository },
         { provide: TokenService, useValue: p.tokenService },
         { provide: getRepositoryToken(PrincipalAliasTypeormEntity), useValue: p.aliasRepository },
         { provide: getRepositoryToken(PrincipalTypeormEntity), useValue: p.principalRepository }

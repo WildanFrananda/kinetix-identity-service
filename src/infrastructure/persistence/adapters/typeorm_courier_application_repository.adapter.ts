@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common"
 import { InjectRepository } from "@nestjs/typeorm"
 import { Repository } from "typeorm"
 import MissingReferenceError from "../../../domain/errors/missing_reference.error"
+import RecordConflictError from "../../../domain/errors/record_conflict.error"
 import CourierApplicationRepositoryPort from "../../../domain/ports/courier_application_repository.port"
 import type {
   ApplicationPage,
@@ -12,7 +13,7 @@ import type {
   CourierFiling
 } from "../../../types/application.type"
 import CourierApplicationTypeormEntity from "../entities/courier_application_typeorm.entity"
-import { isForeignKeyViolation } from "../sql_state"
+import { isForeignKeyViolation, isUniqueViolation } from "../sql_state"
 
 @Injectable()
 class TypeormCourierApplicationRepositoryAdapter implements CourierApplicationRepositoryPort {
@@ -21,35 +22,64 @@ class TypeormCourierApplicationRepositoryAdapter implements CourierApplicationRe
     private readonly repo: Repository<CourierApplicationTypeormEntity>
   ) {}
 
-  async recordFiled(filing: CourierFiling): Promise<void> {
-    await this.write(
-      filing,
-      `INSERT INTO "courier_applications" ("userId", "principalId", "driverId", "status")
-       VALUES ($1, $2, $3, 'pending')
-       ON CONFLICT ("userId") DO UPDATE
-         SET "principalId" = EXCLUDED."principalId",
-             "driverId" = EXCLUDED."driverId",
-             "filedAt" = CASE WHEN "courier_applications"."status" = 'rejected'
-               THEN now() ELSE "courier_applications"."filedAt" END,
-             "rejectedAt" = CASE WHEN "courier_applications"."status" = 'rejected'
-               THEN NULL ELSE "courier_applications"."rejectedAt" END,
-             "status" = CASE WHEN "courier_applications"."status" = 'rejected'
-               THEN 'pending' ELSE "courier_applications"."status" END`
-    )
+  async recordFiled(filing: CourierFiling): Promise<CourierApplicationView> {
+    const plate = filing.vehiclePlate.trim().toUpperCase()
+
+    try {
+      await this.repo.query(
+        `INSERT INTO "courier_applications" ("userId", "principalId", "vehiclePlate", "capacityKg", "status")
+         VALUES ($1, $2, $3, $4, 'pending')
+         ON CONFLICT ("userId") DO UPDATE
+           SET "principalId" = EXCLUDED."principalId",
+               "vehiclePlate" = EXCLUDED."vehiclePlate",
+               "capacityKg" = EXCLUDED."capacityKg",
+               "filedAt" = CASE WHEN "courier_applications"."status" = 'rejected'
+                 THEN now() ELSE "courier_applications"."filedAt" END,
+               "rejectedAt" = CASE WHEN "courier_applications"."status" = 'rejected'
+                 THEN NULL ELSE "courier_applications"."rejectedAt" END,
+               "status" = CASE WHEN "courier_applications"."status" = 'rejected'
+                 THEN 'pending' ELSE "courier_applications"."status" END`,
+        [filing.userId, filing.principalId, plate, filing.capacityKg]
+      )
+    } catch (error) {
+      if (isForeignKeyViolation(error)) {
+        throw new MissingReferenceError(
+          `No account ${filing.userId} with principal ${filing.principalId} to file a courier application for`
+        )
+      }
+      if (isUniqueViolation(error)) {
+        throw new RecordConflictError(`Vehicle plate ${plate} is already registered to another courier`)
+      }
+      throw error
+    }
+
+    const stored = await this.findByUser(filing.userId)
+    if (!stored) {
+      throw new Error(`courier application for account ${filing.userId} was not found after filing`)
+    }
+
+    return stored
   }
 
-  async recordApproved(filing: CourierFiling): Promise<void> {
-    await this.write(
-      filing,
-      `INSERT INTO "courier_applications" ("userId", "principalId", "driverId", "status", "approvedAt")
-       VALUES ($1, $2, $3, 'approved', now())
-       ON CONFLICT ("userId") DO UPDATE
-         SET "principalId" = EXCLUDED."principalId",
-             "driverId" = EXCLUDED."driverId",
-             "status" = 'approved',
-             "approvedAt" = COALESCE("courier_applications"."approvedAt", EXCLUDED."approvedAt"),
-             "rejectedAt" = NULL`
-    )
+  async recordApproved(userId: number): Promise<CourierApplicationView | null> {
+    const result = await this.repo
+      .createQueryBuilder()
+      .update(CourierApplicationTypeormEntity)
+      .set({
+        status: "approved",
+        approvedAt: () => `COALESCE("approvedAt", now())`,
+        rejectedAt: null
+      })
+      .where(`"userId" = :userId AND "status" IN ('pending', 'approved') AND "vehiclePlate" IS NOT NULL`, {
+        userId
+      })
+      .execute()
+
+    if ((result.affected ?? 0) === 0) {
+      return null
+    }
+
+    return await this.findByUser(userId)
   }
 
   async recordRejected(userId: number): Promise<boolean> {
@@ -109,19 +139,6 @@ class TypeormCourierApplicationRepositoryAdapter implements CourierApplicationRe
     return { since: since.toISOString(), approved: Number(row.approved), rejected: Number(row.rejected) }
   }
 
-  private async write(filing: CourierFiling, sql: string): Promise<void> {
-    try {
-      await this.repo.query(sql, [filing.userId, filing.principalId, filing.driverId])
-    } catch (error) {
-      if (isForeignKeyViolation(error)) {
-        throw new MissingReferenceError(
-          `No account ${filing.userId} with principal ${filing.principalId} to file a courier application for`
-        )
-      }
-      throw error
-    }
-  }
-
   private toView(record: CourierApplicationTypeormEntity): CourierApplicationView {
     if (!record.user) {
       throw new Error(`courier application ${record.id} was read without its account`)
@@ -132,7 +149,8 @@ class TypeormCourierApplicationRepositoryAdapter implements CourierApplicationRe
       principalId: record.principalId,
       userId: record.userId,
       email: record.user.email,
-      driverId: record.driverId === null ? null : Number(record.driverId),
+      vehiclePlate: record.vehiclePlate,
+      capacityKg: Number(record.capacityKg),
       status: record.status,
       filedAt: record.filedAt.toISOString(),
       approvedAt: record.approvedAt ? record.approvedAt.toISOString() : null,

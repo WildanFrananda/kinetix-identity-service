@@ -159,7 +159,8 @@ describe("the client proof identity asks of the courier app", () => {
       })
 
       expect(response.statusCode).toBe(201)
-      expect(response.json().driverId).toBe(42)
+      expect(response.json().vehiclePlate).toBe("B 1234 KIN")
+      expect(response.json().capacityKg).toBe(150)
       expect(claimsOf(response.json().accessToken).azp).toBe("courier-app")
     })
 
