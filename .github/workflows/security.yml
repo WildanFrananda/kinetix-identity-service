@@ -48,9 +48,15 @@ jobs:
           fetch-depth: 0
       - name: Scan for verified secrets
         continue-on-error: true
-        uses: trufflesecurity/trufflehog@v3
+        run: |
+          docker run --rm -v "$PWD:/repo" trufflesecurity/trufflehog:latest \
+            git file:///repo --results=verified,unknown --fail --no-update | tee trufflehog.txt
+      - uses: actions/upload-artifact@v7
+        if: always()
         with:
-          extra_args: --results=verified,unknown
+          name: trufflehog
+          path: trufflehog.txt
+          if-no-files-found: ignore
 
   semgrep:
     runs-on: ubuntu-latest
