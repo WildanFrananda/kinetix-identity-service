@@ -1,7 +1,7 @@
 name: Security
 
 # Report-only while the first results are reviewed: every scanner uploads its report as an artifact
-# and none of them fails the run. Blocking is switched on per job by changing `exit-code` to "1"
+# and to GitHub Code Scanning (Security tab), and none of them fails the run. Blocking is switched on per job by changing `exit-code` to "1"
 # (or removing `continue-on-error`) once the findings are triaged.
 
 on:
@@ -18,6 +18,7 @@ concurrency:
 
 permissions:
   contents: read
+  security-events: write
 
 jobs:
   gitleaks:
@@ -39,6 +40,12 @@ jobs:
           name: gitleaks
           path: gitleaks.sarif
           if-no-files-found: ignore
+      - uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('gitleaks.sarif') != ''
+        continue-on-error: true
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks
 
   trufflehog:
     runs-on: ubuntu-latest
@@ -50,13 +57,47 @@ jobs:
         continue-on-error: true
         run: |
           docker run --rm -v "$PWD:/repo" trufflesecurity/trufflehog:latest \
-            git file:///repo --results=verified,unknown --fail --no-update | tee trufflehog.txt
+            git file:///repo --results=verified,unknown --json --no-update > trufflehog.json
+          python3 - <<'PY'
+          import json
+          results = []
+          for line in open("trufflehog.json"):
+              line = line.strip()
+              if not line.startswith("{"):
+                  continue
+              finding = json.loads(line)
+              if "DetectorName" not in finding:
+                  continue
+              git = finding.get("SourceMetadata", {}).get("Data", {}).get("Git", {})
+              verified = finding.get("Verified", False)
+              results.append({
+                  "ruleId": finding["DetectorName"],
+                  "level": "error" if verified else "warning",
+                  "message": {"text": finding["DetectorName"] + (" (verified active)" if verified else " (unverified) in commit " + git.get("commit", "")[:8])},
+                  "locations": [{"physicalLocation": {
+                      "artifactLocation": {"uri": git.get("file", "unknown")},
+                      "region": {"startLine": max(git.get("line", 1), 1)}}}],
+                  "partialFingerprints": {"primaryLocationLineHash": finding.get("DetectorName", "") + git.get("commit", "") + git.get("file", "") + str(git.get("line", 0))},
+              })
+          rules = [{"id": rule} for rule in sorted({r["ruleId"] for r in results})]
+          sarif = {"version": "2.1.0", "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+                   "runs": [{"tool": {"driver": {"name": "TruffleHog", "rules": rules}}, "results": results}]}
+          json.dump(sarif, open("trufflehog.sarif", "w"))
+          PY
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: trufflehog
-          path: trufflehog.txt
+          path: |
+            trufflehog.json
+            trufflehog.sarif
           if-no-files-found: ignore
+      - uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trufflehog.sarif') != ''
+        continue-on-error: true
+        with:
+          sarif_file: trufflehog.sarif
+          category: trufflehog
 
   semgrep:
     runs-on: ubuntu-latest
@@ -84,6 +125,12 @@ jobs:
           name: semgrep
           path: semgrep.sarif
           if-no-files-found: ignore
+      - uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('semgrep.sarif') != ''
+        continue-on-error: true
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
 
   trivy:
     runs-on: ubuntu-latest
@@ -104,8 +151,8 @@ jobs:
         with:
           scan-type: config
           severity: MEDIUM,HIGH,CRITICAL
-          format: table
-          output: trivy-config.txt
+          format: sarif
+          output: trivy-config.sarif
           exit-code: "0"
       - uses: actions/upload-artifact@v7
         if: always()
@@ -113,8 +160,20 @@ jobs:
           name: trivy
           path: |
             trivy-fs.sarif
-            trivy-config.txt
+            trivy-config.sarif
           if-no-files-found: ignore
+      - uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-config.sarif') != ''
+        continue-on-error: true
+        with:
+          sarif_file: trivy-config.sarif
+          category: trivy-config
+      - uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-fs.sarif') != ''
+        continue-on-error: true
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
 
   osv-scanner:
     runs-on: ubuntu-latest
@@ -125,12 +184,19 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/src" -w /src ghcr.io/google/osv-scanner:latest \
             scan source --recursive --format sarif --output-file osv.sarif .
+          sed -i 's#file:///src/##g' osv.sarif
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: osv-scanner
           path: osv.sarif
           if-no-files-found: ignore
+      - uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('osv.sarif') != ''
+        continue-on-error: true
+        with:
+          sarif_file: osv.sarif
+          category: osv-scanner
 
   syft-grype:
     runs-on: ubuntu-latest
@@ -159,6 +225,12 @@ jobs:
             sbom.cdx.json
             grype.sarif
           if-no-files-found: ignore
+      - uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('grype.sarif') != ''
+        continue-on-error: true
+        with:
+          sarif_file: grype.sarif
+          category: grype
 
   hadolint:
     runs-on: ubuntu-latest
@@ -177,13 +249,19 @@ jobs:
           name: hadolint
           path: hadolint.sarif
           if-no-files-found: ignore
+      - uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('hadolint.sarif') != ''
+        continue-on-error: true
+        with:
+          sarif_file: hadolint.sarif
+          category: hadolint
 
   scorecard:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
-      security-events: read
+      security-events: write
       actions: read
     steps:
       - uses: actions/checkout@v7
@@ -201,3 +279,9 @@ jobs:
           name: scorecard
           path: scorecard.sarif
           if-no-files-found: ignore
+      - uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('scorecard.sarif') != ''
+        continue-on-error: true
+        with:
+          sarif_file: scorecard.sarif
+          category: scorecard
