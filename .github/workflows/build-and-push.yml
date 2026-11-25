@@ -25,6 +25,7 @@ concurrency:
 permissions:
   contents: read
   packages: write
+  id-token: write
 
 jobs:
   build:
@@ -99,3 +100,9 @@ jobs:
             echo "$IMAGE@$digest"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          echo "DIGEST_REF=$IMAGE@$digest" >> "$GITHUB_ENV"
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Sign
+        run: cosign sign --yes "$DIGEST_REF"

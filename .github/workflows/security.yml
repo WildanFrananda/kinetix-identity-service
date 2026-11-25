@@ -1,0 +1,197 @@
+name: Security
+
+# Report-only while the first results are reviewed: every scanner uploads its report as an artifact
+# and none of them fails the run. Blocking is switched on per job by changing `exit-code` to "1"
+# (or removing `continue-on-error`) once the findings are triaged.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install Gitleaks
+        run: |
+          version="8.28.0"
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" | tar -xz gitleaks
+      - name: Scan git history
+        continue-on-error: true
+        run: ./gitleaks git --redact --report-format sarif --report-path gitleaks.sarif --exit-code 1 .
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: gitleaks
+          path: gitleaks.sarif
+          if-no-files-found: ignore
+
+  trufflehog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Scan for verified secrets
+        continue-on-error: true
+        uses: trufflesecurity/trufflehog@v3
+        with:
+          extra_args: --results=verified,unknown
+
+  semgrep:
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Scan with community rules
+        continue-on-error: true
+        run: >
+          semgrep scan
+          --config p/default
+          --config p/typescript
+          --config p/nodejs
+          --config p/jwt
+          --config p/owasp-top-ten
+          --config p/secrets
+          --config p/dockerfile
+          --exclude node_modules --exclude dist
+          --sarif --output semgrep.sarif
+          --error
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: semgrep
+          path: semgrep.sarif
+          if-no-files-found: ignore
+
+  trivy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Dependencies, secrets and misconfiguration
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-fs.sarif
+          exit-code: "0"
+      - name: Dockerfile and compose configuration
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          severity: MEDIUM,HIGH,CRITICAL
+          format: table
+          output: trivy-config.txt
+          exit-code: "0"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: trivy
+          path: |
+            trivy-fs.sarif
+            trivy-config.txt
+          if-no-files-found: ignore
+
+  osv-scanner:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Scan lockfiles
+        continue-on-error: true
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src ghcr.io/google/osv-scanner:latest \
+            scan source --recursive --format sarif --output-file osv.sarif .
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: osv-scanner
+          path: osv.sarif
+          if-no-files-found: ignore
+
+  syft-grype:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          upload-artifact: false
+      - name: Scan SBOM
+        uses: anchore/scan-action@v7
+        with:
+          sbom: sbom.cdx.json
+          severity-cutoff: high
+          fail-build: false
+          output-format: sarif
+          output-path: grype.sarif
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: syft-grype
+          path: |
+            sbom.cdx.json
+            grype.sarif
+          if-no-files-found: ignore
+
+  hadolint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hadolint/hadolint-action@v3.3.0
+        continue-on-error: true
+        with:
+          dockerfile: Dockerfile
+          format: sarif
+          output-file: hadolint.sarif
+          no-fail: true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: hadolint
+          path: hadolint.sarif
+          if-no-files-found: ignore
+
+  scorecard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      security-events: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@v2.4.3
+        continue-on-error: true
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          publish_results: false
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: scorecard
+          path: scorecard.sarif
+          if-no-files-found: ignore
